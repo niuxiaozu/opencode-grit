@@ -9,19 +9,7 @@
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "lib": ["ES2022"],
-    "types": ["node"],
-    "baseUrl": ".",
-    "paths": {
-      "@opencode-ai/plugin": [
-        "C:/Users/Administrator/.config/opencode/node_modules/@opencode-ai/plugin/dist/index.d.ts"
-      ],
-      "@opencode-ai/sdk": [
-        "C:/Users/Administrator/.config/opencode/node_modules/@opencode-ai/sdk/dist/index.d.ts"
-      ],
-      "zod": [
-        "C:/Users/Administrator/.config/opencode/node_modules/zod/index.d.ts"
-      ]
-    }
+    "types": ["node"]
   },
   "include": ["plugin", "harness"]
 }

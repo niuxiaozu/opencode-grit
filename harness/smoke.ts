@@ -167,24 +167,35 @@ ok(mall.written.length === 2 && mall.written.every((w) => w.content.includes("ma
 const firstOut = Object.keys(outFiles)[0]
 ok(firstOut !== undefined && (outFiles[firstOut] ?? "").length > 0, "writeFile 回调收到内容")
 
-// ===================== 9. 插件形态 =====================
+// ===================== 9. 插件形态（V2：default 导出 = Plugin.define({id, setup})） =====================
 console.log("[plugin shape]")
-type AnyHooks = {
-  config?: unknown
-  "chat.message"?: unknown
-  "experimental.chat.messages.transform"?: unknown
-  event?: unknown
-  "chat.params"?: unknown
-  "tool.execute.after"?: unknown
-  tool?: Record<string, unknown>
+const def = gritPlugin as unknown as { id?: unknown; setup?: unknown }
+ok(def.id === "grit" && typeof def.setup === "function", "V2 形态：default 导出含 id='grit' + setup 函数")
+// setup 接线冒烟：fake ctx 记录注册内容（GRIT_HOME 指向临时目录，不碰真实盘）
+const tmpHome = mkdtempSync(join(tmpdir(), "grit-home-"))
+process.env.GRIT_HOME = tmpHome
+process.env.GRIT_AGENTS_DIR = join(tmpHome, "agents")
+const registered: { sessionHooks: string[]; tools: string[] } = { sessionHooks: [], tools: [] }
+const fakeCtx = {
+  location: { directory: "D:/tmp", project: { id: "p" } },
+  session: { hook: async (name: string, _cb: unknown) => { registered.sessionHooks.push(name) } },
+  tool: {
+    transform: async (cb: (editor: { add: (t: { name: string }) => void }) => void) => {
+      cb({ add: (t: { name: string }) => registered.tools.push(t.name) })
+    },
+  },
+  command: { transform: async (_cb: unknown) => {} },
+  agent: { list: async () => [] },
+  event: { subscribe: async (_o: unknown) => ({ [Symbol.asyncIterator]: async function* () {} }) },
+  app: {},
 }
-const fakeInput = {
-  client: {}, project: {}, directory: "D:/tmp", worktree: "D:/tmp", serverUrl: new URL("http://localhost:4096"),
-} as unknown as Parameters<typeof gritPlugin>[0]
-const hooks = (await gritPlugin(fakeInput)) as AnyHooks
-const toolNames = Object.keys(hooks.tool ?? {}).sort()
-ok(JSON.stringify(toolNames) === JSON.stringify(["clone_repo", "context_usage", "handoff", "profile", "system_time"]), `恰好 5 个工具：${toolNames.join(", ")}`)
-ok(hooks["chat.message"] !== undefined && hooks.event !== undefined && hooks["experimental.chat.messages.transform"] !== undefined && hooks["chat.params"] !== undefined && hooks.config !== undefined, "机制钩子全部在位（A/B/C/D 接线）")
+await (gritPlugin.setup as (c: unknown) => Promise<unknown>)(fakeCtx)
+const toolNames = registered.tools.slice().sort()
+ok(
+  JSON.stringify(toolNames) === JSON.stringify(["clone_repo", "context_usage", "handoff", "profile", "system_time"])
+    && registered.sessionHooks.includes("prompt") && registered.sessionHooks.includes("context"),
+  `V2 接线在位：prompt/context 钩子 + 恰好 5 个工具：${toolNames.join(", ")}`,
+)
 
 // ===================== 结果 =====================
 console.log(`\n${passed} passed, ${failed} failed`)

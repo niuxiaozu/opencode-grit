@@ -151,6 +151,7 @@ function install() {
     copyFileSync(join(root, "commands", f), join(cfgDir, "commands", f))
     console.log(`  + commands/${f}`)
   }
+  mkdirSync(join(cfgDir, "plugins"), { recursive: true })
   copyFileSync(join(root, "plugin", "grit.ts"), join(cfgDir, "plugins", "grit.ts"))
   console.log("  + plugins/grit.ts")
   copyFileSync(join(root, "scripts", "grit.mjs"), join(scriptsOut, "grit.mjs"))
