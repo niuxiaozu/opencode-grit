@@ -1,0 +1,18 @@
+{
+  "name": "grit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "grit 轻量多代理套件：markdown 代理 + 原生斜杠命令 + 单插件四机制（原创设计；早期参考过 omo 的部分思路）",
+  "scripts": {
+    "install": "node scripts/install.mjs",
+    "uninstall": "node scripts/install.mjs uninstall",
+    "materialize": "node scripts/materialize.mjs",
+    "check": "tsc --noEmit",
+    "test": "node harness/smoke.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.3",
+    "typescript": "^5.5.4"
+  }
+}

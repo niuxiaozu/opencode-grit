@@ -1,0 +1,30 @@
+{
+  "name": "default",
+  "description": "flash 主力：日常档，机制全开",
+  "model": {
+    "build": "zhipuai-coding-plan/glm-5.3-flash",
+    "plan": "zhipuai-coding-plan/glm-5.3",
+    "explore": "zhipuai-coding-plan/glm-5.3-flash",
+    "general": "zhipuai-coding-plan/glm-5.3-flash",
+    "expert": "zhipuai-coding-plan/glm-5.3",
+    "factory": "zhipuai-coding-plan/glm-5.3-flash",
+    "browse": "zhipuai-coding-plan/glm-5.3-flash"
+  },
+  "calibration": "glm",
+  "promptVariants": {},
+  "params": { "apply": false, "temperature": null, "topP": null, "variant": null },
+  "permissions": {
+    "build": { "task": { "*": "deny", "plan": "allow", "explore": "allow", "general": "allow", "expert": "allow", "factory": "allow", "browse": "allow" } },
+    "factory": { "task": "deny" }
+  },
+  "features": {
+    "contractInjector": { "enabled": true },
+    "todoContinuation": {
+      "enabled": true, "countdownSeconds": 2, "cooldownBaseMs": 5000,
+      "backoffPowCap": 5, "maxConsecutiveFailures": 5, "failureResetWindowMs": 600000,
+      "maxStagnation": 3, "abortWindowMs": 3000, "contextSkipPct": 85,
+      "maxTotalInjections": 200, "todoListMaxItems": 10
+    },
+    "profileEngine": { "enabled": true }
+  }
+}

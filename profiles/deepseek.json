@@ -1,0 +1,30 @@
+{
+  "name": "deepseek",
+  "description": "DeepSeek 档：deepseek-flash（V4.1）全席；V4.1-Pro 发布后 plan/expert 可升级",
+  "model": {
+    "build": "deepseek/deepseek-flash",
+    "plan": "deepseek/deepseek-flash",
+    "explore": "deepseek/deepseek-flash",
+    "general": "deepseek/deepseek-flash",
+    "expert": "deepseek/deepseek-flash",
+    "factory": "deepseek/deepseek-flash",
+    "browse": "deepseek/deepseek-flash"
+  },
+  "calibration": "deepseek",
+  "promptVariants": {},
+  "params": { "apply": false, "temperature": null, "topP": null, "variant": null },
+  "permissions": {
+    "build": { "task": { "*": "deny", "plan": "allow", "explore": "allow", "general": "allow", "expert": "allow", "factory": "allow", "browse": "allow" } },
+    "factory": { "task": "deny" }
+  },
+  "features": {
+    "contractInjector": { "enabled": true },
+    "todoContinuation": {
+      "enabled": true, "countdownSeconds": 2, "cooldownBaseMs": 5000,
+      "backoffPowCap": 5, "maxConsecutiveFailures": 5, "failureResetWindowMs": 600000,
+      "maxStagnation": 3, "abortWindowMs": 3000, "contextSkipPct": 85,
+      "maxTotalInjections": 200, "todoListMaxItems": 10
+    },
+    "profileEngine": { "enabled": true }
+  }
+}
