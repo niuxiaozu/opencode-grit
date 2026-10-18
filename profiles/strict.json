@@ -7,23 +7,26 @@
     "explore": "zhipuai-coding-plan/glm-5.3-flash",
     "general": "zhipuai-coding-plan/glm-5.3-flash",
     "expert": "zhipuai-coding-plan/glm-5.3",
-    "factory": "zhipuai-coding-plan/glm-5.3-flash",
     "browse": "zhipuai-coding-plan/glm-5.3-flash"
   },
-  "calibration": "glm",
   "promptVariants": { "build": "strict" },
-  "params": { "apply": false, "temperature": null, "topP": null, "variant": null },
   "permissions": {
-    "build": { "task": { "*": "deny", "plan": "allow", "explore": "allow", "general": "allow", "expert": "allow", "factory": "allow", "browse": "allow" } },
-    "factory": { "task": "deny" }
+    "build": [
+      { "action": "subagent", "resource": "*", "effect": "deny" },
+      { "action": "subagent", "resource": "plan", "effect": "allow" },
+      { "action": "subagent", "resource": "explore", "effect": "allow" },
+      { "action": "subagent", "resource": "general", "effect": "allow" },
+      { "action": "subagent", "resource": "expert", "effect": "allow" },
+      { "action": "subagent", "resource": "browse", "effect": "allow" }
+    ]
   },
   "features": {
     "contractInjector": { "enabled": true },
-    "todoContinuation": {
+    "continuation": {
       "enabled": true, "countdownSeconds": 2, "cooldownBaseMs": 5000,
       "backoffPowCap": 5, "maxConsecutiveFailures": 5, "failureResetWindowMs": 600000,
-      "maxStagnation": 3, "abortWindowMs": 3000, "contextSkipPct": 85,
-      "maxTotalInjections": 200, "todoListMaxItems": 10
+      "maxStagnation": 2, "abortWindowMs": 3000, "contextSkipPct": 85,
+      "maxTotalInjections": 200, "toolLoopWarn": 3, "toolLoopStop": 5
     },
     "profileEngine": { "enabled": true }
   }

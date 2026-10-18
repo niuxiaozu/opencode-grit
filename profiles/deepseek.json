@@ -1,29 +1,32 @@
 {
   "name": "deepseek",
-  "description": "DeepSeek 档：deepseek-flash（V4.1）全席；V4.1-Pro 发布后 plan/expert 可升级",
+  "description": "DeepSeek 档：build/explore/general/browse=deepseek-flash（傻快主力）；plan/expert=glm-5.3（前沿档）",
   "model": {
     "build": "deepseek/deepseek-flash",
-    "plan": "deepseek/deepseek-flash",
+    "plan": "zhipuai-coding-plan/glm-5.3",
     "explore": "deepseek/deepseek-flash",
     "general": "deepseek/deepseek-flash",
-    "expert": "deepseek/deepseek-flash",
-    "factory": "deepseek/deepseek-flash",
+    "expert": "zhipuai-coding-plan/glm-5.3",
     "browse": "deepseek/deepseek-flash"
   },
-  "calibration": "deepseek",
   "promptVariants": {},
-  "params": { "apply": false, "temperature": null, "topP": null, "variant": null },
   "permissions": {
-    "build": { "task": { "*": "deny", "plan": "allow", "explore": "allow", "general": "allow", "expert": "allow", "factory": "allow", "browse": "allow" } },
-    "factory": { "task": "deny" }
+    "build": [
+      { "action": "subagent", "resource": "*", "effect": "deny" },
+      { "action": "subagent", "resource": "plan", "effect": "allow" },
+      { "action": "subagent", "resource": "explore", "effect": "allow" },
+      { "action": "subagent", "resource": "general", "effect": "allow" },
+      { "action": "subagent", "resource": "expert", "effect": "allow" },
+      { "action": "subagent", "resource": "browse", "effect": "allow" }
+    ]
   },
   "features": {
     "contractInjector": { "enabled": true },
-    "todoContinuation": {
+    "continuation": {
       "enabled": true, "countdownSeconds": 2, "cooldownBaseMs": 5000,
       "backoffPowCap": 5, "maxConsecutiveFailures": 5, "failureResetWindowMs": 600000,
-      "maxStagnation": 3, "abortWindowMs": 3000, "contextSkipPct": 85,
-      "maxTotalInjections": 200, "todoListMaxItems": 10
+      "maxStagnation": 2, "abortWindowMs": 3000, "contextSkipPct": 85,
+      "maxTotalInjections": 200, "toolLoopWarn": 3, "toolLoopStop": 5
     },
     "profileEngine": { "enabled": true }
   }

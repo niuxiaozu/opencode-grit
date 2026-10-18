@@ -7,7 +7,7 @@
   "scripts": {
     "install": "node scripts/install.mjs",
     "uninstall": "node scripts/install.mjs uninstall",
-    "materialize": "node scripts/materialize.mjs",
+    "profile": "node scripts/grit.mjs",
     "check": "tsc --noEmit",
     "test": "node harness/smoke.ts"
   },

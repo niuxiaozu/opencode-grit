@@ -1,0 +1,29 @@
+{
+  "build": {
+    "mode": "primary",
+    "description": "Build orchestrator (default tier)."
+  },
+  "plan": {
+    "mode": "primary",
+    "description": "Planning consultant — read-only, never implements. Produces decision-complete plans another agent can execute without re-interviewing the user."
+  },
+  "explore": {
+    "mode": "subagent",
+    "description": "Read-only search agent for project code AND installed/external dependency source (covers scout via clone_repo).",
+    "permissions": [
+      { "action": "clone_repo", "resource": "*", "effect": "allow" }
+    ]
+  },
+  "general": {
+    "mode": "subagent",
+    "description": "General-purpose multi-step executor."
+  },
+  "expert": {
+    "mode": "all",
+    "description": "Escalation specialist — read-only consultant for hard problems: architecture decisions, hard debugging of serious blockers that resisted several different approaches, unfamiliar patterns, high-blast-radius changes, and post-implementation review."
+  },
+  "browse": {
+    "mode": "subagent",
+    "description": "Browser agent — operates a real browser like a human: open-ended research across search engines and content platforms, scraping/collecting data, driving page flows, UI-testing the user's own app. Every claim anchored to URL + selector + quote."
+  }
+}

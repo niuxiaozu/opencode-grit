@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>grit 对 Agent 做了什么：注入的提示词 + 模式进出的流程图</title>
+<style>
+  :root{
+    --ink:#151a21; --muted:#5b6672; --line:#dde3e9; --bg:#f3f5f7; --card:#fff;
+    --grit:#b45309; --you:#2563eb; --model:#0f766e; --stop:#b91c1c; --ok:#15803d;
+    --codebg:#0f172a; --hl:#fff3d6; --hlb:#e8a13a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:16px 16px 48px;background:var(--bg);color:var(--ink);
+       font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;line-height:1.65;font-size:15px}
+  h1{font-size:21px;margin:0 0 4px}
+  h2{font-size:18px;margin:26px 0 8px;padding-bottom:6px;border-bottom:2px solid var(--ink)}
+  h3{font-size:15px;margin:12px 0 6px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 8px}
+  code{background:#eef1f5;border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:13px;font-family:Consolas,Menlo,monospace}
+  pre{margin:6px 0;background:var(--codebg);color:#dbe6f6;border-radius:8px;padding:9px 12px;overflow-x:auto;
+      font-family:Consolas,Menlo,monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+  table{border-collapse:collapse;width:100%;background:var(--card);border:1px solid var(--line);margin-top:8px;font-size:14px}
+  th,td{border-bottom:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#eef1f5;font-size:13px;color:#3d4753}
+  tr:last-child td{border-bottom:none}
+  details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px;margin-top:8px}
+  summary{cursor:pointer;font-weight:600;font-size:14.5px}
+  summary .src{font-weight:400;color:var(--muted);font-size:13px;margin-left:7px}
+  .tiny{font-size:13px;color:var(--muted)}
+  .badge{display:inline-block;font-size:12px;padding:0 7px;border-radius:999px;border:1px solid var(--line);background:#fafbfc;color:var(--muted);margin-left:5px;vertical-align:1px}
+  .b-sys{border-color:#c9d6ea;background:#f0f5ff;color:#2563eb}
+  .b-msg{border-color:#f0c98a;background:#fff7e8;color:#8a5a00}
+  .b-tool{border-color:#bfe0c8;background:#eefaf1;color:#15803d}
+  .new{background:#fff5f5;border:1px solid #f0b4b4;border-radius:10px;padding:8px 12px;margin-top:10px}
+  .newtag{display:inline-block;font-size:12px;padding:0 8px;border-radius:999px;background:#fde8e8;color:#b91c1c;border:1px solid #f0b4b4;margin-bottom:6px;font-weight:600}
+  .red{color:#b91c1c;font-weight:600}
+
+  /* 下钻台 */
+  .bench{display:grid;grid-template-columns:260px minmax(0,1fr);gap:14px;align-items:start;margin-top:10px}
+  @media (max-width:1000px){.bench{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+  .panel.sticky{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
+  .entry{display:block;width:100%;text-align:left;font:inherit;font-size:13.5px;padding:6px 9px;margin:4px 0;
+     border:1px solid var(--line);border-radius:8px;background:#fbfcfd;cursor:pointer;color:inherit}
+  .entry:hover{border-color:var(--hlb);background:#fffaf0}
+  .entry[data-cur="1"]{border-color:var(--hlb);background:var(--hl);box-shadow:inset 3px 0 0 var(--hlb);font-weight:600}
+  .entry .n{color:var(--muted);font-size:12.5px;font-weight:400}
+  .btn{font:inherit;font-size:13.5px;padding:4px 10px;border:1px solid var(--line);border-radius:8px;background:#fbfcfd;cursor:pointer;color:inherit}
+  .btn:hover{border-color:var(--hlb);background:#fffaf0}
+  .btn[disabled]{opacity:.4;cursor:default}
+  .crumb{font-size:13px;color:var(--muted);margin-bottom:8px}
+  .trail{display:flex;flex-direction:column}
+  .node{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--grit);border-radius:10px;padding:10px 14px}
+  .node.start{border-left-color:var(--you)}
+  .node.end{border-left-color:var(--stop);background:#fffafa}
+  .node.cur{box-shadow:0 0 0 3px #f6dcae}
+  .node .h{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+  .node .no{background:var(--ink);color:#fff;border-radius:6px;font-size:12px;padding:0 7px;line-height:1.9;cursor:pointer}
+  .node .t{font-weight:600;font-size:15px}
+  .node .at{font-size:12.5px;color:var(--muted);font-family:Consolas,Menlo,monospace}
+  .node .do{font-size:14px;margin:6px 0 0}
+  .arrow{text-align:center;color:#9aa4b0;font-size:16px;line-height:1;margin:6px 0}
+  .arrow b{color:var(--muted);font-size:12.5px;font-weight:400}
+  .branches{margin-top:12px}
+  .branches .bh{font-size:14px;font-weight:600;margin-bottom:6px}
+  .brlist{display:flex;flex-direction:column;gap:6px}
+  .br{display:flex;gap:10px;align-items:flex-start;text-align:left;font:inherit;font-size:14px;cursor:pointer;
+      border:1px solid var(--hlb);background:#fffaf0;border-radius:9px;padding:7px 11px;color:inherit}
+  .br:hover{background:var(--hl);box-shadow:0 0 0 2px #f6dcae}
+  .br .lab{font-weight:600;white-space:nowrap}
+  .br .to{color:var(--muted);font-size:13px}
+  .br.end{border-color:#e5b4a8;background:#fdf3f0}
+  .endtag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid #e5b4a8;background:#fdf3f0;color:var(--stop)}
+  .empty{color:var(--muted);font-size:14px}
+  .tip{font-size:13px;color:var(--muted);margin:6px 0}
+  footer{margin-top:26px;padding-top:12px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+
+<h1>grit 对 Agent 做了什么</h1>
+<p class="lead">只讲两件事：<b>什么时候往 Agent 那边塞了什么提示词</b>（原文照抄，见 §1），以及<b>持续工作模式的进/出/被推一把</b>是怎么走的（可下钻流程图，见 §2）。插件自己的管路（路径、目录、状态文件、日志、事件分派）不在这里。</p>
+
+<h2>§1 对 Agent 的 9 个动作（含注入原文）</h2>
+<table>
+  <tr><th style="width:150px">什么时候</th><th style="width:110px">塞到哪</th><th style="width:230px">动作</th><th>一句话作用</th></tr>
+  <tr><td>每次要发模型请求</td><td><span class="badge b-sys">系统提示词末尾</span></td><td>贴当前角色的<b>纪律块</b>（已有就不贴）</td><td>告诉这个角色该干什么、别干什么（六份说明书，各一份）</td></tr>
+  <tr><td>每次要发模型请求</td><td><span class="badge b-msg">消息尾巴</span></td><td>模式中 → <b>每轮一行标记</b></td><td>小声提醒「还在模式里、目标是这个、做完调 ulw_exit」（契约本身不再重贴）</td></tr>
+  <tr><td>你敲了 /ulw 但还没进模式</td><td><span class="badge b-msg">消息尾巴</span></td><td>贴<b>催办块</b></td><td>催模型马上调 <code>ulw_enter</code> 并报目标</td></tr>
+  <tr><td>退出后的下一次请求组装</td><td><span class="badge b-msg">消息尾巴</span></td><td>贴<b>模式已关提醒</b>（只贴一次）</td><td>账本里有「待贴」标记才贴；不再看用户消息里的暗号</td></tr>
+  <tr><td>模型调用 <code>ulw_enter</code> 成功时</td><td><span class="badge b-msg">一条新消息</span></td><td>把<b>契约 + 目标</b>作为真消息注入</td><td><code>ctx.session.prompt</code> 落库，之后每一轮都看得到</td></tr>
+  <tr><td>同上（工具结果）</td><td><span class="badge b-tool">工具结果</span></td><td>只回<b>一句短确认</b></td><td>不再把契约全文塞进工具结果（只有注入失败时才退回全文兜底）</td></tr>
+  <tr><td>压缩完成后（<code>session.compaction.ended</code>）</td><td><span class="badge b-msg">一条新消息</span></td><td><b>重注入契约</b></td><td>账本仍激活才发；同一会话 5 秒内只恢复一次</td></tr>
+  <tr><td>一轮结束、护栏全过、等 2 秒后</td><td><span class="badge b-tool">一条新消息</span></td><td>发<b>续跑提示</b></td><td>把停下来的模型再推一把，别等确认</td></tr>
+  <tr><td>模型调用 <code>handoff</code> 时</td><td><span class="badge b-tool">新会话</span></td><td>把<b>交接摘要</b>注入新会话</td><td>换会话接着干，不重复查已知的东西</td></tr>
+</table>
+
+<h3>原文</h3>
+<details open><summary>① 角色纪律块（进系统提示词）<span class="src">contracts/discipline/*.md</span></summary>
+<p class="tiny">形状固定，外面包一层标签；内容 = 该角色的说明书（+ 档里指定的变体）；共用完成纪律已于 2026-10-18 删除。</p>
+<pre>&lt;GRIT-DISCIPLINE agent="build"&gt;
+[GRIT:DISCIPLINE:build]
+&lt;role&gt;You are the build orchestrator of a six-agent team. … &lt;/role&gt;
+&lt;routing_table&gt; … &lt;/routing_table&gt;
+… &lt;/hard_blocks&gt;
+&lt;/GRIT-DISCIPLINE&gt;</pre>
+<table>
+  <tr><th style="width:130px">角色</th><th style="width:70px">字符</th><th>这份说明书讲什么</th></tr>
+  <tr><td>build（主编排）</td><td>10707</td><td>怎么分活：自己干 / 派出去 / 找专家；路由表；6 段委派契约；便宜活别用贵模型</td></tr>
+  <tr><td>plan</td><td>4470</td><td>只做计划、绝不动手；计划要"别人照着做不用再问"</td></tr>
+  <tr><td>explore</td><td>2459</td><td>只回压缩摘要 + 文件行号锚点，禁止搬原文</td></tr>
+  <tr><td>expert</td><td>3292</td><td>只出主意不动手；给一个推荐而不是选项清单</td></tr>
+  <tr><td>general</td><td>1153</td><td>最小改动、贴真实输出、做完即停</td></tr>
+  <tr><td>browse</td><td>2952</td><td>像人一样上网；每条结论带网址 + 选择器 + 引文</td></tr>
+</table>
+<div class="new"><span class="newtag">本次新增（标红部分）</span>
+<h4>build 说明书里的 5 个段落（2026-10-18 瘦身后：verify/tone/hard_blocks 移出、search_rule 并入表格）</h4>
+<table>
+  <tr><th style="width:150px">段落</th><th style="width:70px">字符</th><th>讲什么</th><th style="width:140px">这次会话用到了吗</th></tr>
+  <tr><td><code>&lt;role&gt;</code></td><td>246</td><td>你是六人团队的编排者；自己干更快更便宜就自己干</td><td>一直生效</td></tr>
+  <tr><td><code>&lt;routing_table&gt;</code></td><td>3939</td><td>派活对照表（含成本分档：便宜 1×／中 5×／贵 20×）；2026-10-18 把 <code>&lt;search_rule&gt;</code> 的两条独有规则并了进来（要改的代码自己读、什么时候停止搜索），三行 browse 并成一行，"严重卡壳"那行补上"且你说不出原因"</td><td>一直在用</td></tr>
+  <tr><td><code>&lt;delegation_contract&gt;</code></td><td>1368</td><td>派活时提示词必须含 6 段（任务／期望结果／可用工具／必须做／不许做／背景），后面跟一个"错例 vs 对例"的示例块</td><td>派 browse 时用了</td></tr>
+  <tr><td><code>&lt;expert_policy&gt;</code></td><td>795</td><td>四条判定标准：① 事实能在仓库／任务／实验里找到就自己查；② 含糊且后果重才咨询，且只咨询一次（带上用户原话）；③ 产品口味类问题问用户、不问专家；④ 执行类难题升级门槛三条合取</td><td class="red">已瘦身（3168 → 795）</td></tr>
+  <tr><td><code>&lt;failure_recovery&gt;</code></td><td>317</td><td>连续 3 次不同尝试都失败 → 回退到可用状态 + 找专家</td><td class="red">没用过（保留：属升级规则）</td></tr>
+</table>
+<p class="tiny">合计 <b>6665 字符</b>（原 10707，-38%）。2026-10-18 两轮：① 移出 verify/tone/hard_blocks（1125）→ 9581；② 删 <code>&lt;search_rule&gt;</code>（并入表格）、<code>&lt;expert_policy&gt;</code> 3168→795、合并 browse 三行 → <b>6665</b>。</p>
+<p class="tiny"><b class="red">已于 2026-10-18 移出</b>：这段原本在 build 说明书里（注意 V1/V2/V3 是<b>验证级别</b>，不是版本号）。原文留在下面，可以直接粘进 <code>AGENTS.md</code>：</p>
+<pre>- V1 single file, no behavior change: lsp_diagnostics clean on the file.
+- V2 ≤3 files, behavior change: run the tests that cover them.
+- V3 multi-file / delegated work: read every touched file, run build/tests yourself.
+**NO EVIDENCE = NOT COMPLETE.** A completion claim must point at real output.</pre>
+
+<h4>② 那份共用"完成纪律"和六份说明书的关系（判断要不要留的依据）</h4>
+<p class="tiny">六份说明书<b>各自都已经带了自己的完成/质量标准</b>，② 有很大一部分是重复的：</p>
+<table>
+  <tr><th style="width:230px">角色说明书自带的段落</th><th>里面的原话</th></tr>
+  <tr><td>build <code>&lt;verify&gt;</code> <span class="red">（已移出）</span></td><td>"should pass" is not verification … **NO EVIDENCE = NOT COMPLETE.**（2026-10-18 从 build 说明书移出，改放用户的 AGENTS.md）</td></tr>
+  <tr><td>general <code>&lt;verification&gt;</code></td><td>Done means: lsp_diagnostics clean … AND the relevant build/test command actually ran with output shown. "Should work" is not done.</td></tr>
+  <tr><td>plan <code>&lt;planning_standard&gt;</code></td><td>Every step carries its own verification. "Should work" is not a check.</td></tr>
+  <tr><td>explore <code>&lt;success_criteria&gt;</code> / <code>&lt;failure_conditions&gt;</code></td><td>路径必须绝对、关键结论必须带行号；调用方还得追问就算失败</td></tr>
+  <tr><td>expert <code>&lt;consultation_rules&gt;</code></td><td>每个判断都要有依据（引用你亲自看过的文件路径）</td></tr>
+  <tr><td>browse <code>&lt;failure_conditions&gt;</code></td><td>结论没锚点／把错误页当数据／该交配方却硬啃 → 算失败</td></tr>
+</table>
+<p class="tiny"><b>结论（2026-10-18）</b>：按上面这份对照，② 已<b class="red">整体删除</b>，且按你的意思<b>不搬任何一条</b>——这类"完成标准/不许删改判据"的强制规范归 ULW 模式（由契约承担），正常工作不需要。</p>
+</div>
+<p class="tiny">全文见 <code>contracts/discipline/&lt;角色&gt;.md</code>；改这些文件即改注入内容，不用动代码。</p></details>
+
+<details><summary>② 共用完成纪律 —— <span class="red">已于 2026-10-18 整体删除</span><span class="src">原文件 contracts/discipline/_shared.md</span></summary>
+<p class="tiny">删除理由（你的判断）：这类"补录、删改、测试判据、完成标准"的强制规范属于 <b>ULW 模式</b>——那是你主动开启、要模型严格按标准交付时才该上的紧箍咒；<b>不开 ULW 的正常工作</b>，让模型按任务自己处理就好，不必常驻强制规范。</p>
+<p class="tiny">删掉之后没有角色会"失去完成标准"：六份说明书各自都带了自己的那一份（<code>&lt;verify&gt;</code> / <code>&lt;verification&gt;</code> / <code>&lt;planning_standard&gt;</code> / <code>&lt;success_criteria&gt;</code> / <code>&lt;consultation_rules&gt;</code> / <code>&lt;failure_conditions&gt;</code>）。ULW 开启时，同样内容由契约【2 双证据】【5 零容忍】【6 完成判定】承担。</p>
+<p class="tiny">实现上：插件读不到这个文件就自动跳过（<code>readText(...) ?? ""</code>），不需要改代码；安装脚本已把部署里那份一并清除。</p>
+<details><summary>留档：删除前的原文（5 条）</summary>
+<pre>&lt;completion_discipline&gt;
+完成纪律（所有 grit 代理共有，运行时追加）：
+- 声明"完成"前必须能指向本轮某次真实工具输出（命令回显/测试结果/文件内容）——NO EVIDENCE = NOT COMPLETE。
+- 不删改/弱化测试或判据来制造"通过"；失败就如实报告并贴输出，跳过的步骤明说跳过。
+- "应该能行 / 大致没问题 / 下次再补"不是完成；未验证的收尾一律视为未完成。
+- 交付物落在预期位置、符合仓库既有惯例、不碰清单外文件；残留风险与 pre-existing 失败明说。
+- 只做被要求的事：不顺手重构、不加"未来兼容层"、不发明新工作。
+&lt;/completion_discipline&gt;</pre></details>
+</details>
+
+<details><summary>③ 契约全文（作为一条真消息注入：进入时 / 压缩后）<span class="src">contracts/ulw.md（末行会被替换成交接模板）</span></summary>
+<pre>&lt;ulw-contract v1&gt;
+【0. 模式与目标】本模式由 `ulw_enter` 工具开启：目标 = **用户最近一次提出的任务**（在最近几轮对话里定位，**未必是最后一条消息**），**不是**更早的、更大范围的全局目标；二者不一致时**以最近为准**。目标由你在调用该工具时通过 goal 参数设定；系统据此在每轮标记与续跑提示中携带该目标。完成时调用 `ulw_exit` 工具退出。
+
+【1. 场景契约】动手前写 1–3 个（多面/高风险 3+）现实场景，每条必须是二元可观察的通过条件（如"返回 200 且 body 符合 schema"），禁止"应该能行/大致没问题"——这些场景就是完成合同。
+
+【2. 双证据（去 TDD 化）】每条判据完成后必须附真实执行痕迹：命令输出/测试运行结果/HTTP 状态/DB 记录/截图，形式不限；有测试接缝就跑测试作证据，无接缝就真实操作一遍取证；"看代码觉得对"不构成完成依据。不规定开发流程，不要求先写测试，无 RED→GREEN 顺序要求。
+
+【3. 审查门】改动 3+ 文件 / 碰安全·权限·迁移 / 单元超 30min / 用户要求严格 → 委派 expert（只读）复查；blocker 必须引用失败判据才算阻塞，其余是备注；最多回审 2 轮后上交用户。
+
+【4. MANUAL QA 矩阵】按改动类型强制真实操作：CLI→跑命令贴输出；API→调端点贴状态与响应；UI→浏览器截图；配置→加载并验证解析形状。清理也是 QA：为验证开的进程/端口/临时目录必须清理，未清理=未完成。
+
+【5. 零容忍清单】禁止以下收尾：简化版/demo/骨架/先做一部分/应该能行/下次再补；禁止交付 mock 冒充真实现（为测试造 fake 数据不在此列——那是正当的测试工作）；禁止删/弱化判据来制造"通过"；禁止对未读代码下结论。
+
+【6. 完成判定】账面全绿≠完成。宣布完成前逐项自检：交付物在预期位置/符合项目既有惯例/证据在手/未碰无关文件/残留风险已明说。全部为真→简短总结收尾，并调用 `ulw_exit` 工具退出（系统据此停止自动续跑；这是你的自主决策，不等"停止"指令，也不发明新工作）。
+
+【7. 进度跟踪】本模式不依赖 todo 工具（v2 已无此工具）：用你自己的推理维护进度；阶段性发现、遗留问题写进本轮交付说明或交接摘要，不落项目内文件。
+
+【附·交接阶梯】段落边界用 context_usage 工具查占用（非段落边界禁止查询），按阶梯决策：
+- 占用 ≥45% 或发生上下文压缩事件（以先到者为准）→ 立即按下方模板撰写交接摘要并调用 handoff 工具，不问确认。
+- 占用 ≥25%：仅当同时满足 ①已产出阶段性成果（测试通过/代码已提交/阶段交付完成）且 ②接下来的工作与本会话任务关联不大、或需读取大量新内容（新文件/新模块/新领域）→ 也立即交接；否则继续工作。
+- 占用 &lt;25%：继续工作，不交接。
+- context_usage 返回"暂无快照"时改用定性信号：本回复出现"如前所述/之前提到过"等回溯措辞、需要向用户澄清早期指令、或明确引用对话前半段内容——满足任一立即交接；0 条继续工作。
+
+{{handoff_template}}
+&lt;/ulw-contract&gt;</pre>
+<p class="tiny">这段文本现在由 <code>ctx.session.prompt</code> 作为一条真实用户消息发出（外面包 <code>&lt;system-reminder&gt;</code> 和「目标：…」一行），因此会落库、后续每轮都看得到；工具 <code>ulw_enter</code> 只回一句短确认。压缩完成（<code>session.compaction.ended</code>）时会用同样方式再发一次；另有 60 秒节流的兜底（历史里确实没有契约时才贴回）。</p></details>
+
+<details><summary>③b 交接模板（替换契约末行）<span class="src">contracts/handoff-template.md</span></summary>
+<pre>【交接摘要模板】（调用 handoff 工具时作为 summary 参数传入）
+写法要求：①信息够全为唯一标准 ②只陈述信息（是什么/在哪/结果/还差什么），不写指令 ③具体到可核对（路径、命令原文、输出关键行、报错原文、版本）
+## 1 任务与目标　## 2 当前状态　## 3 已确认的事实（方案与决定/已验证结论/关键文件:行/环境事实/外部依据）
+## 4 待处理的工作　## 5 已知的坑　## 6 验证情况　## 7 会话级状态</pre></details>
+
+<details><summary>④ 每轮一行标记（消息尾巴）</summary>
+<pre>&lt;system-reminder&gt;[GRIT:ULW:ACTIVE] 持续工作模式进行中（目标：〔当前目标〕）。纪律契约持续有效；完成后调用 ulw_exit 工具退出。&lt;/system-reminder&gt;</pre></details>
+
+<details><summary>⑤ 催办块（消息尾巴）</summary>
+<pre>&lt;system-reminder&gt;[GRIT:ULW:ARMED] 用户已请求持续工作模式：请立即调用 ulw_enter 工具进入，传入「用户最近一次提出的任务」作为目标（在最近几轮里定位，未必是最后一条消息；不要取更早的、更大范围的全局目标）。工具会把纪律契约作为一条提醒消息注入本会话，按其执行；完成时调用 ulw_exit 退出。&lt;/system-reminder&gt;</pre></details>
+
+<details><summary>⑥ 续跑提示（一条新消息）</summary>
+<pre>&lt;system-reminder&gt;
+[GRIT:ULW:CONTINUE]
+持续工作模式仍在进行：继续推进既定目标，不要停下来等待确认。
+- 按已注入的纪律契约执行：真实证据、自己验证、别削弱判据。
+- 只有当目标真正完成（每条判据都有真实执行痕迹）时，才调用 ulw_exit 工具退出。
+（目标：〔当前目标〕）
+&lt;/system-reminder&gt;</pre></details>
+
+<details><summary>⑦ 模式已关提醒（消息尾巴，账本驱动、只贴一次）</summary>
+<pre>&lt;system-reminder&gt;[GRIT:ULW:EXITED] ULW 已退出：纪律契约（场景契约/验收证据/审查门/QA 矩阵/零容忍/完成判定）自此不再生效。请用一两句话总结当前进度与剩余工作后结束回合，不要继续推进。&lt;/system-reminder&gt;</pre></details>
+
+<details><summary>⑧ 进入 / 拒绝 / 退出的回话（工具结果）</summary>
+<pre>进入成功（契约走另一条真消息，工具只回这一句）：
+已进入持续工作模式（ULW）。目标：〔目标〕。契约已作为一条提醒消息注入本会话，按它执行；完成时调用 ulw_exit 退出。
+
+授权核对不通过（不写状态、不贴任何东西）：
+未进入 ULW：上一条用户消息不含授权标识。仅当用户执行过 /ulw（其命令文本含 [GRIT:ULW:START]）时才应调用本工具；否则不要进入持续工作模式。
+
+退出（两条路共用同一句）：
+ULW 已退出：纪律契约自此不再生效。
+（随后下一次请求组装会贴一次 ⑦ 的提醒）</pre></details>
+
+<p class="tiny">另外：7 个工具各自的 <b>description</b>（模型看到的那段说明）也算提示词，但它们写在插件源码里（<code>grit.ts</code> 的 <code>TOOL_DEFS</code>），不在 <code>contracts/</code>——要改口气得改代码。</p>
+<p class="tiny"><b class="red">2026-10-18 改动</b>：消息通道的注入块（④⑤⑥⑦）从自定义标签 <code>&lt;grit-inject&gt;</code> 改为原生认的 <code>&lt;system-reminder&gt;</code>。理由：原生基础提示词里明确写着「<code>&lt;system-reminder&gt;</code> 块是 harness 指令、要读要遵守」——借这句背书，模型更不容易把注入块当成普通用户文本。</p>
+<p class="tiny"><b class="red">2026-10-19 改动</b>：契约从「工具结果」改为「一条真消息」——<code>ulw_enter</code> 与 <code>session.compacted</code> 都用 <code>ctx.session.prompt</code> 注入「契约 + 目标」，工具只回短确认；「已退出」提醒改由账本标记（<code>exitNoticePending</code>）驱动，退出后下一次组装贴一次；context 钩子不再做压缩恢复；压缩恢复用 <code>session.compaction.ended</code>（<code>session.compacted</code> 到不了插件事件流），并在 context 钩子留了 60 秒节流的兜底。</p>
+
+<h2>§2 持续工作模式：进 / 每轮 / 被推 / 插话 / 出（可下钻）</h2>
+<p class="lead">左边选一条路径，中间出现第一步；每张卡片下面列出这一步的所有分支，点一条走进去。卡片里是源码原文＋行号。</p>
+
+<div class="bench">
+  <div class="panel sticky">
+    <h3>路径</h3>
+    <div id="entries"></div>
+    <h3>控制</h3>
+    <button class="btn" id="back">← 回退一步</button>
+    <button class="btn" id="reset">重新开始</button>
+    <p class="tip" id="status">还没开始。</p>
+    <p class="tip">卡片编号可点，点了就回到那一步。</p>
+  </div>
+  <div class="panel">
+    <div class="crumb" id="crumb">选一条路径开始</div>
+    <div class="trail" id="trail"></div>
+    <div class="branches" id="branches"></div>
+  </div>
+</div>
+
+<h2>§3 决定"推不推"的 12 条护栏</h2>
+<p class="lead">这是 §2「一轮结束」那一步真正在判的东西。任一条命中就不推（或暂停/停止）。</p>
+<table>
+  <tr><th style="width:36px">#</th><th style="width:330px">条件</th><th style="width:130px">结果</th><th>日志</th></tr>
+  <tr><td>1</td><td>账本没激活 或 已停</td><td>不推</td><td><code>SKIP reason=not-active / stopped</code></td></tr>
+  <tr><td>2</td><td>距上次"中止"不足 3 秒</td><td>不推</td><td><code>SKIP reason=abort-window</code></td></tr>
+  <tr><td>3</td><td>因连败暂停，但已过 10 分钟</td><td>解除暂停</td><td>—</td></tr>
+  <tr><td>3'</td><td>因"用户插话"暂停，且模型已对你那句有回应（响应指纹变了）</td><td>解除暂停</td><td>—</td></tr>
+  <tr><td>3''</td><td>仍处于暂停</td><td>不推</td><td><code>SKIP reason=paused:原因</code></td></tr>
+  <tr><td>4</td><td>上次推过，这次回答一字未变（连着 2 次）</td><td>停止</td><td><code>STOP reason=stagnated</code></td></tr>
+  <tr><td>5</td><td>连续失败 ≥ 5 次</td><td>暂停（10 分钟后自动解除）</td><td><code>PAUSE reason=max-failures</code></td></tr>
+  <tr><td>6</td><td>距上次推送 &lt; 5 秒 × 2^连败次数（最多翻 5 次）</td><td>不推</td><td><code>SKIP reason=cooldown</code></td></tr>
+  <tr><td>7</td><td>上下文占用 ≥ 85%（分子=单步 token，分母=模型真实窗口）</td><td>不推</td><td><code>SKIP reason=context-high</code></td></tr>
+  <tr><td>8</td><td>同一工具、同样参数在最近 60 条消息里重复到第 5 次</td><td>停止</td><td><code>STOP reason=tool-loop</code></td></tr>
+  <tr><td>9</td><td>累计推送 ≥ 200 次</td><td>停止</td><td><code>STOP reason=injection-budget</code></td></tr>
+  <tr><td>10</td><td>以上全过</td><td>等 2 秒 → 发续跑提示</td><td><code>COUNTDOWN</code> → <code>INJECT</code></td></tr>
+</table>
+
+<footer>源码：<code>plugin/grit.ts</code>（1403 行）。注入原文：<code>contracts/ulw.md</code>、<code>contracts/handoff-template.md</code>、<code>contracts/discipline/*.md</code>；四条便签与工具回话在源码里。</footer>
+
+<script>
+/* 只保留与 Agent 有关的步骤：注入、模式进出、被推一把。 */
+const NODES = {};
+Object.assign(NODES, {
+/* ---------- 路径①：进入持续工作模式 ---------- */
+E1: { t:"你敲 /ulw [说明]", at:"commands/ulw.md", code:"[GRIT:ULW:START]\n$ARGUMENTS", do:"命令正文只有两行：授权标识 + 你写的字。此刻还没有任何契约，插件也不塞话。", br:[{l:"下一步：请求组装", to:"E2"}] },
+E2: { t:"你发消息那一刻：只更新状态", at:"grit.ts:1109-1124", code:'const sentinel = matchSentinel(text)   // 只看前两行整行\n// 不是退出/续跑暗号 → 读账本；此时账本还不存在 → 什么都不做', do:"这一步不往消息里加任何字。", br:[{l:"下一步：模型要开口前", to:"E3"}] },
+E3: { t:"贴【催办块】到你那条消息的尾巴", at:"grit.ts:1192-1193", code:'} else if (lu.includes(ULW_AUTH_TOKEN)) {\n  if (!messagesContain(msgs, ARMED_TAG)) appendInject(msgs, `<system-reminder>${ARMED_TAG} 用户已请求持续工作模式：请立即调用 ulw_enter 工具进入…</system-reminder>`)\n}', do:"条件：账本没激活 + 你上一条消息含 [GRIT:ULW:START]。只贴一次。这就是你在界面上看到的「多出来的一段提醒」。", br:[{l:"下一步：模型动手", to:"E4"}] },
+E4: { t:"模型调用 ulw_enter(goal)", at:"grit.ts:1296-1297", code:'case "ulw_enter":\n  return { content: await enterUlw(sid, directory, String(input?.goal ?? "")) }', do:"入参是模型从会话上下文里提炼的一句话目标。进入这一步靠模型配合——它不调，模式就不成立。", br:[{l:"进校验 A", to:"E5"}] },
+E5: { t:"校验 A：机制开着吗", at:"grit.ts:959", code:'if (!featEnabled("contractInjector")) return "ULW 机制已关闭（profile.features.contractInjector=false 或 GRIT_DISABLE=1）。"', do:"机制关了就回一句，不写任何状态。", br:[{l:"开着 → 继续", to:"E6"},{l:"关 → 结束", to:null}] },
+E6: { t:"校验 B：本会话已经在模式里？", at:"grit.ts:960-961", code:"const existing = loadState(sid)\nif (!existing?.active) {   // 已在模式里就跳过授权校验（允许更新目标）", do:"", br:[{l:"不在 → 要查授权", to:"E7"},{l:"已在 → 跳过授权，直接写账本", to:"E8"}] },
+E7: { t:"校验 C：上一条用户消息含授权标识吗", at:"grit.ts:962-966", code:'const lu = await lastUserText(sid)\nif (!lu.includes(ULW_AUTH_TOKEN)) {\n  log("a", `ENTER-REJECT …`)\n  return `未进入 ULW：上一条用户消息不含授权标识。…`\n}', do:"这道门在代码里核对，防的是「模型自己乱进」；它管不了「模型不配合」。", br:[{l:"含 → 放行", to:"E8"},{l:"不含 → 拒绝并结束", to:null}] },
+E8: { t:"写账本：激活 + 目标 + 次数清零", at:"grit.ts:968-973、982-987", code:'const state = { ...(existing ?? newState(sid, dir)),\n  active: true, objective: goal.trim().slice(0, 200),\n  epoch: (existing?.epoch ?? 0) + 1, stopReason: null, pauseReason: null, totalInjections: 0 }\nstate.contractFingerprint = bc.fingerprint\nsaveState(state)', do:"目标截断 200 字符；每次进入 epoch +1。", br:[{l:"继续", to:"E9"}] },
+E9: { t:"契约文件在吗", at:"grit.ts:974-979", code:'const bc = buildContract()\nif ("error" in bc) { saveState(state); return `已进入 ULW，但契约文件缺失：${bc.error}（无契约注入）。` }', do:"契约文件读不到也照样进入，只是告诉模型没有契约。", br:[{l:"在 → 给契约", to:"E10"},{l:"缺 → 结束（无契约）", to:null}] },
+E10: { t:"用 ctx.session.prompt 把【契约 + 目标】注入成一条真消息", at:"grit.ts:992-994、267-276", code:'await ctx.session.prompt({ sessionID: sid, text: contractNotice(bc.text, state.objective) })', do:"文本用 <code>&lt;system-reminder&gt;</code> 包裹，里面是契约全文（ulw.md + 交接模板 + 首尾哨兵）和当前目标。落库后 UI 上就是一条用户消息，后续每轮都看得到；这是契约唯一的入口。", br:[{l:"下一步：回话", to:"E11"}] },
+E11: { t:"工具只回一句短确认", at:"grit.ts:1005", code:'return `已进入持续工作模式（ULW）。目标：…。契约已作为一条提醒消息注入本会话，按它执行；完成时调用 ulw_exit 退出。`', do:"契约不再塞进工具结果；只有 prompt 注入失败时才退回全文兜底。", br:[{l:"终点：模式已生效", to:null}] },
+
+/* ---------- 路径②：每一轮（注入纪律与标记） ---------- */
+R1: { t:"模型每次要开口之前", at:"grit.ts:1138", code:'await ctx.session.hook("context", (event) => { ... })', do:"每次组装请求都过一次；下面两段依次做。", br:[{l:"先看系统提示词", to:"R2"}] },
+R2: { t:"系统提示词里已有该角色的纪律块吗", at:"grit.ts:1143-1145", code:'if (Array.isArray(sys) && AGENT_NAMES.includes(agent)) {\n  const tag = `[GRIT:DISCIPLINE:${agent}]`\n  if (!sysHas(sys, tag)) {', do:"幂等判据就是那个标签；角色名不在六席里（起标题/压缩这类）直接跳过。", br:[{l:"没有 → 贴", to:"R3"},{l:"已有 → 不重复贴", to:"R4"}] },
+R3: { t:"贴【角色纪律块】到系统提示词末尾", at:"grit.ts:1146-1147", code:'const content = readDiscipline(agent)   // 该角色说明书（+ 档里指定的变体；共用完成纪律已于 2026-10-18 删除）\nif (content) sys.push({ type: "text", text: disciplineBlock(agent, content) })', do:"内容固定、位置固定 ⇒ 前缀缓存不受影响。原文见 §1-①。", br:[{l:"继续", to:"R4"}] },
+R4: { t:"是不是真实干活的回合", at:"grit.ts:1159", code:"if (!AGENT_NAMES.includes(agent)) return   // 辅助请求不带 agent", do:"起标题、压缩上下文这类请求不带角色名 → 直接返回，什么都不贴。", br:[{l:"否 → 结束", to:null},{l:"是", to:"R5"}] },
+R5: { t:"账本已激活吗", at:"grit.ts:1167-1169", code:"if (st && st.active && st.stopReason === null) {", do:"", br:[{l:"是 → 贴每轮标记", to:"R9"},{l:"否（含刚退出）", to:"R6"}] },
+R6: { t:"账本里有一条待贴的「已退出」提醒吗", at:"grit.ts:1187-1190", code:'if (st && st.stopReason !== null && st.exitNoticePending) {\n  if (!messagesContain(msgs, EXITED_TAG)) appendInject(msgs, exitNoticeBlock())\n  saveState({ ...st, exitNoticePending: false })\n}', do:"退出时由 exitUlw 写入这个标记。贴一次就清掉；不再看用户消息里有没有 [GRIT:ULW:EXIT]。", br:[{l:"有 → 贴提醒", to:"R7"},{l:"没有", to:"R8"}] },
+R7: { t:"贴【模式已关提醒】并清标记", at:"grit.ts:1188-1190", code:'appendInject(msgs, `<system-reminder>${EXITED_TAG} ULW 已退出：纪律契约自此不再生效…</system-reminder>`)\nsaveState({ ...st, exitNoticePending: false })', do:"模型随后收尾，不再自动推进。原文见 §1-⑦。", br:[{l:"结束", to:null}] },
+R8: { t:"你上一条消息里有 /ulw 授权标识吗", at:"grit.ts:1192", code:"if (lu.includes(ULW_AUTH_TOKEN) && !messagesContain(msgs, ARMED_TAG)) {", do:"没进模式（或已退出）时才会走到这里。", br:[{l:"有 → 催办", to:"R8b"},{l:"没有 → 结束", to:null}] },
+R8b: { t:"贴【催办块】", at:"grit.ts:1193", code:'appendInject(msgs, `<system-reminder>${ARMED_TAG} 用户已请求持续工作模式：请立即调用 ulw_enter 工具进入…</system-reminder>`)', do:"原文见 §1-⑤。", br:[{l:"结束", to:null}] },
+R9: { t:"贴【每轮一行标记】", at:"grit.ts:1169", code:"if (!messagesContain(msgs, MARKER_TAG)) appendInject(msgs, markerLine(st.objective))", do:"带目标；已有就不再贴。契约本身已经在历史里（进入/压缩时注入的真消息），这里不再重贴；另有兜底：历史里确实没有契约时贴回一次（60 秒节流）。原文见 §1-④。", br:[{l:"结束", to:null}] },
+
+/* ---------- 路径③：一轮结束，推不推 ---------- */
+I1: { t:"一轮结束（模型说完话、没活在跑）", at:"grit.ts:1431-1435", code:'if (type === "session.execution.succeeded") {\n  const st = loadState(sid)\n  if (!st || !st.active || st.stopReason !== null) continue\n  void handleIdle(sid)', do:"只有这个时刻会考虑「再推一把」。", br:[{l:"继续", to:"I2"}] },
+I2: { t:"账本激活且未停吗", at:"grit.ts:1433-1434", code:"if (!st || !st.active || st.stopReason !== null) continue", do:"没进模式 / 已停 → 什么都不做。", br:[{l:"是", to:"I3"},{l:"否 → 结束", to:null}] },
+I3: { t:"续跑开关开着吗", at:"grit.ts:900", code:"if (!contEnabled()) return   // GRIT_DISABLE=1 或 features.continuation.enabled=false", do:"", br:[{l:"开", to:"I4"},{l:"关 → 结束", to:null}] },
+I4: { t:"去重：正在处理 / 已有倒计时？", at:"grit.ts:902-903", code:'if (SHARED.inflight.has(sid)) return   // SKIP reason=inflight\nif (countdownTimers.has(sid)) return   // SKIP reason=countdown-pending', do:"同进程插件实例很多，这条防重复注入。", br:[{l:"没重复", to:"I5"},{l:"重复 → 结束", to:null}] },
+I5: { t:"过 12 条护栏（§3）", at:"grit.ts:924、442-510", code:"const r = decideContinuation(state, ctr, cfg, input, Date.now())\n// 输入：占用率 / 响应指纹 / 工具重复度；输出：countdown | skip | pause | stop", do:"任一条命中 → 不推（或暂停/停止），只有全过才推。逐条见 §3。", br:[{l:"命中 → 不推/暂停/停止", to:null},{l:"全过", to:"I6"}] },
+I6: { t:"等 2 秒（你插话的窗口）", at:"grit.ts:931-937", code:'const ms = Math.max(0, cfg.countdownSeconds) * 1000\nconst timer = setTimeout(() => { countdownTimers.delete(sid); void doInject(sid) }, ms)', do:"这 2 秒里你一发消息，prompt 钩子会把它取消（见路径④）。", br:[{l:"到点", to:"I7"}] },
+I7: { t:"注入前复核账本", at:"grit.ts:867-871", code:"const st = loadState(sid)\nif (!st || !st.active || st.stopReason !== null) { log(\"b\", `INJECT-SKIP …`); return }", do:"防止用陈旧状态把已退出的会话复活。", br:[{l:"仍激活", to:"I8"},{l:"已退出 → 结束", to:null}] },
+I8: { t:"发【续跑提示】一条新消息", at:"grit.ts:873", code:"await ctx.session.prompt({ sessionID: sid, text: continuationBlock(st.objective) })", do:"内容以 [GRIT:ULW:CONTINUE] 开头（插件自己认得，不当成你的新指令）。原文见 §1-⑥。", br:[{l:"成功", to:"I9"},{l:"失败 → 计一次失败（连败到 5 暂停）", to:null}] },
+I9: { t:"计数 +1，记「待进展」", at:"grit.ts:874-886", code:"ctr.lastInjectedAt = Date.now(); ctr.awaitingProgress = true; ctr.consecutiveFailures = 0\nafter.totalInjections += 1; saveState(after)   // log INJECT", do:"「待进展」是护栏第 4 条（原地打转）的输入。", br:[{l:"终点：等下一轮", to:null}] },
+
+/* ---------- 路径④：插话 → 暂停 → 恢复 ---------- */
+X1: { t:"你发了一条普通消息（不是暗号）", at:"grit.ts:1117-1125", code:'const st = loadState(sid)\nif (st.active && st.stopReason === null) {\n  cancelCountdown(sid)\n  if (st.pauseReason !== "user-interruption") saveState({ ...st, pauseReason: "user-interruption" })\n}', do:"取消倒计时 + 把状态记成「用户插话，先暂停」。不往消息里加字。", br:[{l:"下一步：一轮结束", to:"X4"}] },
+X4: { t:"护栏第 3' 条：模型对你那句有回应了吗", at:"grit.ts:463-466", code:'else if ((state.pauseReason === "directive-response" || state.pauseReason === "user-interruption")\n         && input.fingerprint !== counters.fingerprint) { state.pauseReason = null }', do:"比的是「最后一条助手回答的指纹」——变了就说明模型已经回应过你那句。", br:[{l:"变了 → 解除暂停，恢复续跑", to:"I5"},{l:"没变 → 继续暂停（结束）", to:null}] },
+
+/* ---------- 路径⑤：退出 ---------- */
+Q1: { t:"谁发起退出？", at:"grit.ts:1110-1111、1298-1299", code:'// 你：/ulw-exit 命令首行是 [GRIT:ULW:EXIT] → prompt 钩子命中\n// 模型：判断完成 → 调用 ulw_exit', do:"两条路都进同一个 exitUlw。", br:[{l:"你敲 /ulw-exit（确定性）", to:"Q2"},{l:"模型调 ulw_exit", to:"Q4"}] },
+Q2: { t:"prompt 钩子命中退出暗号", at:"grit.ts:1109-1111", code:'if (sentinel === SENTINEL_EXIT) {\n  exitUlw(sid, "user")\n  return\n}', do:"不等模型配合，立刻退出。", br:[{l:"继续", to:"Q3"}] },
+Q3: { t:"账本置停 + 留待贴提醒 + 清倒计时", at:"grit.ts:1010-1019", code:'cancelCountdown(sid)\nsaveState({ ...st, active: false, stopReason: "completed", pauseReason: null, exitNoticePending: true })\nreturn "ULW 已退出：纪律契约自此不再生效。"', do:"两条路走同一个函数：active=false 让续跑门全拦；exitNoticePending=true 让下一次组装贴一次提醒。", br:[{l:"下一步：下一次组装", to:"Q5"}] },
+Q4: { t:"模型调 ulw_exit", at:"grit.ts:1298-1299", code:'case "ulw_exit":\n  return { content: exitUlw(sid, String(input?.reason ?? "model")) }', do:"与上面同一条函数、同一句失效声明。", br:[{l:"继续", to:"Q3"}] },
+Q5: { t:"下一次请求组装：贴【模式已关提醒】并清标记", at:"grit.ts:1187-1190", code:'if (st.exitNoticePending) {\n  if (!messagesContain(msgs, EXITED_TAG)) appendInject(msgs, exitNoticeBlock())\n  saveState({ ...st, exitNoticePending: false })\n}', do:"谁发起的退出都一样：提醒文本同一段、由账本状态驱动、只贴一次。原文见 §1-⑦。", br:[{l:"终点：模式结束", to:null}] },
+
+/* ---------- 路径⑥：上下文压缩 → 契约重注入 ---------- */
+C1: { t:"压缩完成（session.compaction.ended）", at:"grit.ts:1382-1385", code:'if (type === "session.compaction.ended") {\n  if (sid) void restoreAfterCompact(sid)\n  continue\n}', do:"压缩会把历史里的契约一起压掉，所以在这个事件里重新发一次。事件名必须是 compaction.ended：插件事件流只有 compaction.*，另一个 session.compacted 到不了插件。", br:[{l:"去重：5 秒内只恢复一次", to:"C2"}] },
+C2: { t:"账本还激活吗", at:"grit.ts:1311-1322", code:'const st = loadState(sid)\nif (!st || !st.active || st.stopReason !== null) return\nconst last = SHARED.lastCompacted.get(sid) ?? 0\nif (now - last < 5000) return   // 同一事件会分发给每个插件实例', do:"已退出/已停 → 不恢复；5 秒去重防同一事件被多实例重复处理。", br:[{l:"激活 → 重注入", to:"C3"},{l:"未激活 → 结束", to:null}] },
+C3: { t:"再用 prompt 发一次契约 + 当前目标", at:"grit.ts:1329-1334", code:'await ctx.session.prompt({ sessionID: sid, text: contractNotice(bc.text, st.objective) })\ngetCtr(sid).lastInjectedAt = Date.now()   // 别让续跑门紧接着再推', do:"和进入时同一段文本、同一条通道；发完记一次时间，避免马上又被推一把。", br:[{l:"终点：契约回来了", to:null}] }
+});
+
+const ENTRIES = [
+  { id:"enter",     name:"① 进入持续工作模式", n:"E1–E10", hint:"你敲 /ulw → 催办 → 模型调工具 → 校验 → 拿到契约" },
+  { id:"round",     name:"② 每一轮：注入纪律与标记", n:"R1–R10", hint:"每次请求组装时贴什么、什么时候贴" },
+  { id:"idle",      name:"③ 一轮结束：推不推", n:"I1–I9", hint:"护栏 → 2 秒 → 发续跑提示" },
+  { id:"interrupt", name:"④ 你插话 → 暂停 → 恢复", n:"X1–X4", hint:"插话先暂停，模型回应后自动恢复" },
+  { id:"exit",      name:"⑤ 退出（两条路）", n:"Q1–Q5", hint:"你敲 /ulw-exit ／ 模型调 ulw_exit → 同一条函数、同一次提醒" },
+  { id:"compact",   name:"⑥ 上下文压缩 → 契约重注入", n:"C1–C3", hint:"session.compacted → 账本仍激活 → 再发一条契约消息" }
+];
+const START = { enter:"E1", round:"R1", idle:"I1", interrupt:"X1", exit:"Q1", compact:"C1" };
+</script>
+<script>
+(function(){
+  "use strict";
+  const $ = (s, r) => (r || document).querySelector(s);
+  const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const escAttr = s => esc(s).replace(/"/g, "&quot;");
+  const st = { entry: null, trail: [] };
+  const elEntries = $("#entries"), elTrail = $("#trail"), elBr = $("#branches"),
+        elCrumb = $("#crumb"), elStatus = $("#status");
+
+  ENTRIES.forEach(function(e){
+    const b = document.createElement("button");
+    b.className = "entry";
+    b.dataset.id = e.id;
+    b.innerHTML = e.name + ' <span class="n">' + esc(e.n) + '</span><br><span class="n">' + esc(e.hint) + '</span>';
+    b.addEventListener("click", function(){ start(e.id); });
+    elEntries.appendChild(b);
+  });
+
+  function start(id){ st.entry = id; st.trail = [{ id: START[id], via: "入口" }]; render(); }
+  function push(id, via){ if(!id) return; st.trail.push({ id: id, via: via }); render(); }
+  function back(){ if(st.trail.length > 1){ st.trail.pop(); render(); } }
+  function goto(i){ if(i >= 0 && i < st.trail.length){ st.trail = st.trail.slice(0, i + 1); render(); } }
+
+  function render(){
+    Array.prototype.forEach.call(elEntries.children, function(b){
+      b.setAttribute("data-cur", b.dataset.id === st.entry ? "1" : "0");
+    });
+    $("#back").disabled = st.trail.length <= 1;
+    if(!st.entry){
+      elTrail.innerHTML = ""; elBr.innerHTML = "";
+      elCrumb.textContent = "选一条路径开始";
+      elStatus.textContent = "还没开始。";
+      return;
+    }
+    const ent = ENTRIES.filter(function(e){ return e.id === st.entry; })[0] || {};
+    elCrumb.innerHTML = "路径：" + esc(ent.name || st.entry) + "　·　已走 " + st.trail.length + " 步";
+    const html = [];
+    st.trail.forEach(function(step, i){
+      const n = NODES[step.id];
+      if(!n) return;
+      if(i > 0) html.push('<div class="arrow">↓ <b>' + esc(step.via) + '</b></div>');
+      const cls = "node" + (i === 0 ? " start" : "") + (i === st.trail.length - 1 ? " cur" : "");
+      html.push('<div class="' + cls + '">' +
+        '<div class="h"><span class="no" title="点编号回到这一步">' + (i + 1) + '</span>' +
+        '<span class="t">' + esc(n.t) + '</span><span class="at">' + esc(n.at) + '</span></div>' +
+        (n.do ? '<p class="do">' + n.do + '</p>' : "") +
+        (n.code ? '<pre>' + esc(n.code) + '</pre>' : "") +
+        '</div>');
+    });
+    elTrail.innerHTML = html.join("");
+    Array.prototype.forEach.call(elTrail.querySelectorAll(".no"), function(el, i){
+      el.addEventListener("click", function(){ goto(i); });
+    });
+    const cur = NODES[st.trail[st.trail.length - 1].id];
+    const brs = (cur && cur.br) || [];
+    if(!brs.length){
+      elBr.innerHTML = '<div class="bh">终点</div><div class="empty">这条路径到此结束。</div>';
+    } else {
+      const rows = brs.map(function(b){
+        const tgt = b.to ? NODES[b.to] : null;
+        return '<button class="br' + (b.to ? "" : " end") + '" data-to="' + (b.to || "") + '" data-lab="' + escAttr(b.l) + '">' +
+          '<span class="lab">' + esc(b.l) + '</span>' +
+          '<span class="to">' + (b.to ? "→ " + esc(tgt ? tgt.t : b.to) : '<span class="endtag">终点</span>') + '</span></button>';
+      });
+      elBr.innerHTML = '<div class="bh">这一步的所有分支（点一条继续）</div><div class="brlist">' + rows.join("") + '</div>';
+      Array.prototype.forEach.call(elBr.querySelectorAll(".br"), function(btn){
+        btn.addEventListener("click", function(){
+          const to = btn.dataset.to, lab = btn.dataset.lab;
+          if(!to){ elStatus.textContent = "这条分支是终点。可以「回退一步」或换一条路径。"; return; }
+          push(to, lab);
+        });
+      });
+    }
+    elStatus.textContent = "已走 " + st.trail.length + " 步；当前节点分支数：" + brs.length + "。";
+    const last = elTrail.lastElementChild;
+    if(last && last.scrollIntoView) last.scrollIntoView({ block: "nearest" });
+  }
+
+  $("#back").addEventListener("click", back);
+  $("#reset").addEventListener("click", function(){ if(st.entry) start(st.entry); });
+  document.documentElement.setAttribute("data-ready", "1");
+})();
+</script>
+</body>
+</html>

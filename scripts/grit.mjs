@@ -4,19 +4,21 @@
  *
  * 用法：
  *   grit profile            列出全部 profile（* = 当前激活）
- *   grit profile <name>     切换激活 profile（写指针 + 重物化 agents/*.md）
+ *   grit profile <name>     切换激活 profile（写指针 + 更新 opencode.json 的 agents 记录）
  *
  * 任意终端可用（PATH 垫片 grit.cmd 由 install.mjs 写入 npm 全局 bin）。
- * 生效边界：params、features 开关/阈值、calibration ≤3s 热生效（运行中的
- * OpenCode 会话经插件 TTL 自动感知）；模型映射/permissions/变体需重启。
- *
- * 默认操作【部署版】数据根（~/.config/opencode）；开发仓库内调试用
- * --profiles/--src/--out 覆盖。
+ * 生效边界（OpenCode V2）：features 开关/阈值 ≤3s 热生效；模型映射/permissions
+ * 也自动热生效（~3s，V2 监视配置目录自动重载，无需重启）；仅"当前会话已选模型"不追溯。
+ * 开发仓库内调试用 --profiles/--index/--config 覆盖。
  */
 import { existsSync, readFileSync, writeFileSync, unlinkSync, renameSync, readdirSync } from "node:fs"
 import { join } from "node:path"
-import { validateProfile, materializeAll, readActiveName } from "./materialize-core.ts"
+import { fileURLToPath } from "node:url"
+import { dirname } from "node:path"
+import { validateProfile, buildAgentRecords, readAgentsIndex, readActiveName } from "./materialize-core.ts"
 
+const here = dirname(fileURLToPath(import.meta.url))
+const root = dirname(here)
 const arg = (f) => {
   const i = process.argv.indexOf(f)
   return i >= 0 ? process.argv[i + 1] : undefined
@@ -25,9 +27,10 @@ const home = process.env.USERPROFILE ?? process.env.HOME
 const cfgDir = join(home ?? "", ".config", "opencode")
 const dataRoot = join(cfgDir, "grit")
 const profilesDir = arg("--profiles") ?? join(dataRoot, "profiles")
-const srcDir = arg("--src") ?? join(dataRoot, "agents")
-const outDir = arg("--out") ?? join(cfgDir, "agents")
-const variantsDir = join(dataRoot, "variants")
+const indexPath = arg("--index") ?? join(dataRoot, "agents", "index.json")
+const cfgPath = arg("--config") ?? join(cfgDir, "opencode.json")
+/** 曾被 grit 托管、现已移除的席位（切换时一并清除，避免残留）。 */
+const REMOVED_AGENT_NAMES = ["factory"]
 
 const die = (m) => {
   console.error(`✗ ${m}`)
@@ -42,12 +45,12 @@ function listProfiles() {
     let desc = "（解析失败）"
     try {
       desc = String(JSON.parse(readFileSync(join(profilesDir, `${n}.json`), "utf8")).description ?? "")
-    } catch { /* 保持占位 */ }
+    } catch { /* 占位 */ }
     return `${n === active ? "*" : " "} ${n.padEnd(10)} ${desc}`
   })
   console.log(`可用 profile（* = 当前激活）：\n${rows.join("\n")}`)
   console.log(`\n切换：grit profile <名字>`)
-  console.log(`立即生效：params、features 开关与阈值、calibration（运行中会话 ≤3s 自动感知）；需重启 OpenCode：模型映射、permissions、变体`)
+  console.log(`立即生效：features 开关与阈值；自动热生效（~3s，无需重启）：模型映射、permissions`)
 }
 
 function switchProfile(name) {
@@ -60,30 +63,66 @@ function switchProfile(name) {
   } catch (e) {
     die(`profile JSON 解析失败：${e instanceof Error ? e.message : String(e)}`)
   }
-  const vr = validateProfile(obj, { expectedName: name, validCalibrations: ["default", "glm", "deepseek"] })
+  const vr = validateProfile(obj, { expectedName: name })
   if (!vr.ok) die(`profile 校验失败：${vr.errors.join("；")}`)
-  // 原子写指针（与插件 profile 工具同款）
+  // 原子写指针
   const tmp = join(profilesDir, "active.tmp")
   writeFileSync(tmp, `${name}\n`, "utf8")
-  try { unlinkSync(join(profilesDir, "active")) } catch { /* 首次不存在 */ }
+  try { unlinkSync(join(profilesDir, "active")) } catch { /* 首次 */ }
   renameSync(tmp, join(profilesDir, "active"))
-  try {
-    const res = materializeAll({ agentsSrcDir: srcDir, outDir, profilesDir, activeName: name, variantsDir })
-    for (const w of res.warnings) console.warn(`! ${w}`)
-    console.log(`✓ 已切换到 profile：${name}（重物化 ${res.written.length} 个代理 → ${outDir}）`)
-  } catch (e) {
-    die(`指针已切换但物化失败：${e instanceof Error ? e.message : String(e)}\n  稍后手跑：node "${join(cfgDir, "scripts", "materialize.mjs")}" --profile ${name}`)
+  // 更新 opencode.json 的 agents 记录
+  const index = readAgentsIndex(indexPath)
+  if (Object.keys(index).length === 0) die(`agents/index.json 缺失：${indexPath}`)
+  const defaultPath = join(profilesDir, "default.json")
+  const defaultProfile = existsSync(defaultPath) ? JSON.parse(readFileSync(defaultPath, "utf8")) : {}
+  const { records, warnings } = buildAgentRecords({ index, profile: obj, defaultProfile })
+  for (const w of warnings) console.warn(`! ${w}`)
+  // 严格读：带注释/坏 JSON 一律中止（防把用户配置覆盖成"只剩 agents"）
+  let rawCfg = null
+  let cfg = {}
+  if (existsSync(cfgPath)) {
+    rawCfg = readFileSync(cfgPath, "utf8")
+    try {
+      cfg = JSON.parse(rawCfg)
+    } catch (e) {
+      die(`opencode.json 解析失败（可能有注释/JSONC）：${e.message}——已中止，未改动文件`)
+    }
   }
-  console.log(`立即生效：params、features 开关与阈值、calibration（运行中会话 ≤3s 自动感知）。`)
-  console.log(`需重启 OpenCode 生效：模型映射、permissions、提示词变体。`)
+  for (const n of [...Object.keys(records), ...REMOVED_AGENT_NAMES]) {
+    if (cfg.agents && typeof cfg.agents === "object") delete cfg.agents[n]
+  }
+  cfg.agents = { ...(cfg.agents ?? {}), ...records }
+  // 改前备份（单槽）
+  const bakPath = `${cfgPath}.bak-switch`
+  if (rawCfg !== null) {
+    try { writeFileSync(bakPath, rawCfg, "utf8") } catch (e) { console.warn(`  ! 备份失败：${e.message}`) }
+  }
+  const tmpCfg = `${cfgPath}.tmp`
+  writeFileSync(tmpCfg, `${JSON.stringify(cfg, null, 2)}\n`, "utf8")
+  try { unlinkSync(cfgPath) } catch { /* 首次 */ }
+  renameSync(tmpCfg, cfgPath)
+  // 写后校验：能解析 且 每条记录 model 与档一致；不通过 → 还原 + 报错
+  try {
+    const after = JSON.parse(readFileSync(cfgPath, "utf8"))
+    const bad = Object.keys(records).filter((n) => !after?.agents?.[n] || after.agents[n].model !== records[n]?.model)
+    if (bad.length > 0) throw new Error(`缺记录或 model 不符：${bad.join(", ")}`)
+  } catch (e) {
+    if (rawCfg !== null) {
+      try { writeFileSync(cfgPath, rawCfg, "utf8"); die(`写后校验失败：${e.message}——已从备份还原 ${bakPath}`) } catch { /* 还原也失败 */ }
+    }
+    die(`写后校验失败：${e.message}（无备份可还原）`)
+  }
+  console.log(`✓ 已切换到 profile：${name}（更新 ${Object.keys(records).length} 条 agents 记录 → ${cfgPath}，改前备份 ${bakPath}）`)
+  console.log(`立即生效：features 开关与阈值。`)
+  console.log(`自动热生效（~3s，无需重启）：模型映射、permissions。`)
 }
 
 const sub = process.argv[2]
 const name = process.argv[3]
 if (sub === undefined || (sub === "profile" && !name)) listProfiles()
 else if (sub === "profile" && name) switchProfile(name)
-else if (sub === "--profiles" || sub === "--src" || sub === "--out") listProfiles() // 仅有调试旗标也走列表
+else if (sub === "--profiles" || sub === "--index" || sub === "--config") listProfiles()
 else {
-  console.log(`用法：\n  grit profile            列出全部 profile\n  grit profile <name>     切换激活 profile\n调试旗标：--profiles <dir> --src <dir> --out <dir>`)
+  console.log(`用法：\n  grit profile            列出全部 profile\n  grit profile <name>     切换激活 profile\n调试旗标：--profiles <dir> --index <path> --config <path>`)
   process.exit(sub === undefined ? 0 : 1)
 }

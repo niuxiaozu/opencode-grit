@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>grit 设计修订 3 · 定稿（面向 opencode v2）</title>
+<style>
+:root{
+  --bg:#0f1116; --panel:#171a21; --panel2:#1d2129; --line:#2a2f3a;
+  --tx:#e6e9ef; --tx2:#a9b1c0; --tx3:#6f7887;
+  --opencode:#4ea1ff; --grit:#f0a94b; --profile:#8b7bf0;
+  --ok:#46c48a; --warn:#e0605f; --chip:#232833;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:64px}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:var(--sans);line-height:1.65;font-size:15.5px}
+a{color:var(--opencode);text-decoration:none} a:hover{text-decoration:underline}
+h1,h2,h3,h4{line-height:1.3;margin:0 0 .5em}
+code{font-family:var(--mono);background:var(--chip);padding:.1em .4em;border-radius:5px;font-size:.86em}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px 120px}
+nav.top{position:sticky;top:0;z-index:50;background:rgba(15,17,22,.9);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+nav.top .inner{max-width:1080px;margin:0 auto;padding:10px 22px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+nav.top a{font-size:13px;color:var(--tx2);padding:5px 9px;border-radius:7px}
+nav.top a:hover{background:var(--chip);color:var(--tx);text-decoration:none}
+nav.top .brand{font-weight:700;color:var(--tx);margin-right:auto;font-size:13.5px}
+nav.top button{font:inherit;font-size:12.5px;color:var(--tx2);background:transparent;border:1px solid var(--line);padding:5px 10px;border-radius:7px;cursor:pointer}
+nav.top button:hover{border-color:var(--tx3);color:var(--tx)}
+header.hero{padding:52px 0 8px;border-bottom:1px solid var(--line);margin-bottom:34px}
+.kicker{color:var(--grit);font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:600}
+.hero h1{font-size:30px;margin:8px 0 10px}
+.hero p.lead{color:var(--tx2);font-size:16.5px;max-width:840px;margin:0}
+.meta{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+.chip{font-size:12px;color:var(--tx2);background:var(--chip);border:1px solid var(--line);padding:3px 10px;border-radius:999px}
+section{margin:0 0 8px}
+.sec-h{display:flex;align-items:baseline;gap:12px;margin:44px 0 16px}
+.sec-h .n{font-family:var(--mono);color:var(--tx3);font-size:14px}
+.sec-h h2{font-size:22px;margin:0}
+.sec-sub{color:var(--tx2);margin:-6px 0 18px;font-size:14.5px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin:14px 0}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:1fr 1fr}
+.g3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:820px){.g2,.g3{grid-template-columns:1fr}}
+.tldr{background:linear-gradient(180deg,#181c24,#141820);border-left:3px solid var(--grit)}
+.tldr ul{margin:.4em 0 0;padding-left:1.25em} .tldr li{margin:.42em 0}
+.layer{border-radius:12px;padding:14px 16px;border:1px solid var(--line);margin:10px 0}
+.layer .tag{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.06em;padding:2px 8px;border-radius:6px;display:inline-block;margin-bottom:8px}
+.l0{border-left:4px solid var(--opencode)} .l0 .tag{background:rgba(78,161,255,.16);color:var(--opencode)}
+.l1{border-left:4px solid var(--grit)} .l1 .tag{background:rgba(240,169,75,.16);color:var(--grit)}
+.l2{border-left:4px solid var(--profile)} .l2 .tag{background:rgba(139,123,240,.16);color:var(--profile)}
+.mut{color:var(--tx2);font-size:14px}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.8px}
+th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--tx2);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.05em}
+td code{font-size:12.5px} tr:last-child td{border-bottom:none}
+details{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin:10px 0;overflow:hidden}
+details>summary{cursor:pointer;padding:14px 18px;font-weight:600;list-style:none;display:flex;gap:10px;align-items:center}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"\25B8";color:var(--tx3);font-size:13px;transition:transform .15s}
+details[open]>summary::before{transform:rotate(90deg)}
+details>summary:hover{background:var(--panel2)}
+details .body{padding:2px 18px 18px;border-top:1px solid var(--line)}
+.tagrow{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.badge{font-size:11.5px;font-family:var(--mono);padding:2px 8px;border-radius:6px;border:1px solid var(--line);color:var(--tx2)}
+.b-ok{color:var(--ok);border-color:rgba(70,196,138,.4)}
+.b-warn{color:var(--warn);border-color:rgba(224,96,95,.4)}
+.b-open{color:var(--grit);border-color:rgba(240,169,75,.4)}
+.gloss{background:#141820;border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin:12px 0}
+.gloss dt{color:var(--grit);font-weight:600;font-family:var(--mono);font-size:13px;margin-top:8px}
+.gloss dd{margin:2px 0 0;color:var(--tx2);font-size:14px}
+.ascii{font-family:var(--mono);font-size:12.5px;white-space:pre;overflow:auto;color:var(--tx2);line-height:1.5}
+.hl-opencode{color:var(--opencode)} .hl-grit{color:var(--grit)} .hl-profile{color:var(--profile)}
+.note{border-left:3px solid var(--warn);background:#1a1616;border-radius:8px;padding:11px 15px;margin:12px 0;font-size:14px;color:var(--tx2)}
+.note b{color:var(--tx)}
+.good{border-left:3px solid var(--ok);background:#121a16;border-radius:8px;padding:11px 15px;margin:12px 0;font-size:14px;color:var(--tx2)}
+.good b{color:var(--tx)}
+footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);color:var(--tx3);font-size:13px}
+::selection{background:rgba(240,169,75,.3)}
+</style>
+</head>
+<body>
+<nav class="top">
+  <div class="inner">
+    <span class="brand">grit · DESIGN-v3 · 定稿</span>
+    <a href="#s0">结论</a>
+    <a href="#s1">全局地图</a>
+    <a href="#s2">v2 事实</a>
+    <a href="#s3">设计依据</a>
+    <a href="#s4">名册</a>
+    <a href="#s5">机制</a>
+    <a href="#s6">注入格式</a>
+    <a href="#s7">迁移·验证</a>
+    <a href="#s8">计划</a>
+    <button id="toggleAll" type="button">全部展开</button>
+  </div>
+</nav>
+
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">grit 设计修订 3 · 方案定稿 · 2026-10-14</div>
+  <h1>分层组合：grit 变成「叠在 opencode 之上的一层纪律」</h1>
+  <p class="lead">目标运行时 = opencode v2。主轴：<b>不再用 grit 的 agent 正文「替换」opencode 的提示词，而是让 grit 的纪律「追加」在 opencode 原生层之上；续跑做减法（模型自判完成）。</b></p>
+  <div class="meta">
+    <span class="chip">opencode v2.0.25 源码 + 官方文档</span>
+    <span class="chip">生态调研（slim / OmO / 轻派共识）</span>
+    <span class="chip">保留：弱管强 · 省 token · 会话交接</span>
+  </div>
+</header>
+
+<!-- 0 -->
+<section id="s0">
+  <div class="sec-h"><span class="n">00</span><h2>30 秒结论</h2></div>
+  <div class="card tldr">
+    <ul>
+      <li><b>病根</b>：grit agent 正文落在 <code>agent.system</code> → 整段替换基础提示词、跳过 provider 变体、丢工具指导。</li>
+      <li><b>药方 = 分层组合</b>：原生层不动；grit 纪律改为运行时钩子<b>追加</b>；agent 定义<b>薄覆盖</b>（不写 system）。</li>
+      <li><b>续跑（ULW）做减法</b>：<b>不重做 todo</b>；判活只看"激活 + 未声明完成 + 护栏"；<b>完成由模型自己按目标判断</b>——不引入判据库、无独立验证、不用专家验证。</li>
+      <li><b>保留既有机制</b>：契约注入、会话交接、profile 引擎、token 快照、五个工具、命令、校准段。</li>
+      <li><b>注入格式</b>：一律用<b>独立、带标签的块 / 合成消息</b>，<b>不拼进用户原文</b>。</li>
+    </ul>
+  </div>
+  <div class="gloss">
+    <b>三个之前看不懂的词：</b>
+    <dl>
+      <dt>触发器</dt><dd>一个"事件时点"。grit 监听<b>会话空闲</b>（模型说完、没有正在跑的工具/子代理）这一时刻，到点才检查"要不要接着推"。不是定时轮询，也不是每步都查。</dd>
+      <dt>续跑判定</dt><dd>到点后判"继续 / 停止"。只有三条：未激活→不动；已激活且未声明完成→推一把；模型声明完成→停。</dd>
+      <dt>判据库（已删除）</dt><dd>早期草案那张"每条完成条件 + 证据 + pass/fail 状态"的表（即"仲裁文件"）。<b>本设计不引入</b>——它把复杂流程塞回上下文，违背省 token 与"让模型自己判断"。</dd>
+    </dl>
+  </div>
+</section>
+
+<!-- 1 -->
+<section id="s1">
+  <div class="sec-h"><span class="n">01</span><h2>全局地图</h2></div>
+  <p class="sec-sub">一次模型请求里谁提供什么。蓝=opencode 原生（不碰），橙=grit 追加，紫=profile 热参数。</p>
+  <div class="card">
+    <div class="ascii">一次模型请求的 <span class="hl-opencode">system</span> 数组（顺序示意）
+
+  <span class="hl-opencode">system[0]</span>  <span class="hl-opencode">┌ L0 · opencode 原生 ─────────────────────────────┐</span>
+            <span class="hl-opencode">│</span> base prompt (system.txt) + ${TOOL_GUIDANCE}
+            <span class="hl-opencode">│</span>  · provider 变体由 optimize 插件在 system[0] 上改写
+            <span class="hl-opencode">└──────────────────────────────────────────────────┘</span>   &lt;- 不设 agent.system 即回流
+  <span class="hl-opencode">system[1]</span>     identity "# Your Model"
+  <span class="hl-opencode">system[2]</span>     initial 基线：日期 / &lt;env&gt; / AGENTS.md / 技能清单 / CodeMode
+  <span class="hl-grit">system[N]</span>  <span class="hl-grit">┌ L1 · grit 纪律层（钩子追加，独立带标签块）─────┐</span>
+            <span class="hl-grit">│</span> 按 event.agent 选择（build 路由表 / explore 摘要契约 …）
+            <span class="hl-grit">│</span> + 校准段（按 providerID 作用域）
+            <span class="hl-grit">└──────────────────────────────────────────────────┘</span>
+
+  <span class="hl-profile">messages</span>    ULW 模式块（一次）+ 每轮一行标记（非持久）+ 续跑提示（合成消息）
+  <span class="hl-profile">options</span>     热参数 temperature / topP / variant
+  <span class="hl-profile">tools</span>       5：context_usage · system_time · clone_repo · handoff · profile</div>
+  </div>
+  <div class="grid g3">
+    <div class="layer l0"><span class="tag">L0 · 原封不动</span><div class="mut">基础提示词 · 工具指导 · provider 变体 · identity · AGENTS.md/env 基线 · 权限 · 工具/CodeMode · 技能 · Plan 模式</div></div>
+    <div class="layer l1"><span class="tag">L1 · grit 追加</span><div class="mut">路由表 · 委派契约 · 摘要契约 · 决策框架 · 验证纪律 · 校准段</div></div>
+    <div class="layer l2"><span class="tag">L2 · profile 物化</span><div class="mut">model · permissions · mode → <code>agents</code> 记录；温度/variant → 逐请求热参数</div></div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section id="s2">
+  <div class="sec-h"><span class="n">02</span><h2>opencode v2 机制事实（一等约束）</h2></div>
+  <div class="card"><table>
+    <tr><th>机制</th><th>事实</th></tr>
+    <tr><td>system 组装</td><td><code>[ agent.system ? agent.system : 基础提示词, initial ]</code> → 设 system 即<b>整段替换</b></td></tr>
+    <tr><td>provider 变体</td><td>自定义 system 时跳过；仅 6 个变体，<b>无 glm/deepseek</b></td></tr>
+    <tr><td>工具指导</td><td><code>${OPENCODE_TOOL_GUIDANCE}</code> 仅随基础提示词渲染</td></tr>
+    <tr><td>identity / initial</td><td><code># Your Model</code> 与 AGENTS.md/env 基线独立，始终保留</td></tr>
+    <tr><td>加载/覆盖</td><td>md <b>恒注入 system</b>（空 body 清掉内置 prompt）；<code>agents</code> 记录可省略 system 以保留内置 prompt</td></tr>
+    <tr><td>Plan</td><td><code>plan</code> 是 primary；只读围栏 + 进出提醒 + <code>~/.opencode/plan</code></td></tr>
+    <tr><td>子代理</td><td>拒绝 mode=primary；运行时渲染 "Available subagents:"</td></tr>
+    <tr><td>v2 无 todo</td><td><code>REMOVED_TOOLS=["todowrite"]</code>；core 无 todo 工具、schema 无 todo 类型</td></tr>
+    <tr><td>自定义提示词途径</td><td><code>session.hook("context", e =&gt; e.system.push({type:"text",text}), { providerID })</code></td></tr>
+    <tr><td>合成消息</td><td><code>ctx.session.synthetic({sessionID, text, resume:false})</code>（v2 原生 <code>plan.ts</code> 用法）</td></tr>
+    <tr><td>JS API</td><td><code>SessionContext.system/messages/options/tools</code> 可变；SystemPart = <code>{type:"text",text}</code></td></tr>
+  </table></div>
+</section>
+
+<!-- 3 -->
+<section id="s3">
+  <div class="sec-h"><span class="n">03</span><h2>设计依据（外部证据）</h2></div>
+
+  <details open>
+    <summary>todo 为什么被删、还需不需要？<span class="tagrow"><span class="badge b-warn">决定续跑形态</span></span></summary>
+    <div class="body">
+      <p class="mut"><b>官方唯一解释</b>（维护者 issue #42421）："we removed it because it <b>slows agent down</b> and we haven't noticed significant performance improvements"；issue 已 reopen。</p>
+      <p class="mut"><b>同类动作</b>：Claude Code 在 Opus 4.8 / Sonnet 5+ 默认禁用 <code>TodoWrite</code>，理由"新模型内部自跟踪状态"+"工具定义与提醒占用上下文"。</p>
+      <p class="mut"><b>三方确认 v2 无 todo</b>：官方 tools 文档、<code>opencode-todolist</code>、<code>zenox</code>。</p>
+      <p class="mut"><b>结论</b>：新一代模型下外部 todo 工具被认为多余甚至拖慢 → <b>grit 不重做 todo 工具</b>。</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>生态"轻派"共识做法（借鉴来源）</summary>
+    <div class="body">
+      <table>
+        <tr><th>做法</th><th>出处</th><th>grit 采用</th></tr>
+        <tr><td>静态策略进 system、动态状态走工具返回</td><td>prevalentWare goal</td><td>✅ 契约一次注入</td></tr>
+        <tr><td>单行恒定注入（不破坏 prompt cache）</td><td>opencode-todolist</td><td>✅ 每轮一行标记</td></tr>
+        <tr><td>按需注入（重程序命中才注入一次）</td><td>slim council-inject</td><td>✅ 纪律只在 /ulw 付 token</td></tr>
+        <tr><td>判活=子会话终态（children 无终态才算忙）</td><td>slim v2 wake</td><td>✅ 触发器判据</td></tr>
+        <tr><td>触发器只认 idle/执行边沿</td><td>prevalentWare</td><td>✅</td></tr>
+        <tr><td>计数熔断（无进展/失败/轮次/时长）</td><td>prevalentWare / zenox / hiai</td><td>✅ 护栏</td></tr>
+        <tr><td>工具死循环护栏（warn3/block5）</td><td>slim tool-loop-guard</td><td>✅ 护栏</td></tr>
+        <tr><td>指纹未变即停</td><td>slim 2-wake cap</td><td>✅ 护栏</td></tr>
+        <tr><td>costRatio 写进编排协议</td><td>opencode-model-router</td><td>✅ build 协议</td></tr>
+        <tr><td>不强制流水线（角色有用才用）</td><td>opencode-orchestrator</td><td>✅</td></tr>
+        <tr><td>缓存安全注入（append-only + 尾随易变消息）</td><td>slim</td><td>✅ 注入规范</td></tr>
+      </table>
+    </div>
+  </details>
+
+  <details>
+    <summary>明确不抄（OmO 的教训）</summary>
+    <div class="body">
+      <p class="mut">强制 todo 续跑、激进重试、<b>38 个行为钩子</b>、上下文偏执监控 → slim 全删；orchestrator 提示词 <b>1485 行 → 67 行（-95%）</b>。每轮重灌 ~3K token 横幅；honor-system 完成；强制 plan 门；"ZERO TOLERANCE"喊话。</p>
+      <p class="mut"><b>本轮再删</b>：判据库 / 证据账本 / 独立验证器 / 专家验证（用户裁定：验证不与执行分离、不用专家，模型自判即可）。</p>
+    </div>
+  </details>
+</section>
+
+<!-- 4 -->
+<section id="s4">
+  <div class="sec-h"><span class="n">04</span><h2>名册与覆盖机制</h2></div>
+  <div class="card"><table>
+    <tr><th>席</th><th>mode</th><th>v2 内置有 system？</th><th>覆盖方式</th><th>追加的纪律段</th></tr>
+    <tr><td>build 主编排</td><td>primary</td><td>否</td><td>配置记录（省 system）</td><td>路由表 · 委派契约 · <b>costRatio 分档</b> · 验证 · tone</td></tr>
+    <tr><td>plan</td><td>primary（原生）</td><td>否</td><td>配置记录（不覆盖权限）</td><td>计划纪律段（可选）</td></tr>
+    <tr><td>explore 检索</td><td>subagent</td><td><b style="color:var(--warn)">是（PROMPT_EXPLORE）</b></td><td>配置记录（<b>必须省 system</b>）</td><td>摘要契约 · 深读 · clone_repo 用法</td></tr>
+    <tr><td>general 执行</td><td>subagent</td><td>否</td><td>配置记录（省 system）</td><td>目标/完成纪律 · scope · 验证 · 报告</td></tr>
+    <tr><td>expert 决策</td><td>all</td><td>无</td><td>配置记录（省 system）</td><td>决策框架 · 输出契约</td></tr>
+    <tr><td>factory 造数</td><td>subagent</td><td>无</td><td>配置记录（省 system）</td><td>造数规则 · 工作流 · 输出契约</td></tr>
+    <tr><td>browse 浏览</td><td>subagent</td><td>无</td><td>配置记录（省 system）</td><td>任务 · 工具 · 锚点纪律</td></tr>
+  </table>
+  <p class="mut">名额 7（不新增 architect）。<b>不强制流水线</b>：角色"有用才用"。</p>
+  </div>
+  <details>
+    <summary>逐席判定（build/general 兼容 · explore 合成 · plan 原生 · expert 保留）</summary>
+    <div class="body">
+      <p class="mut"><b>build / general</b>：v2 内置<b>无 system</b> → 天然兼容，薄覆盖 + 追加纪律即可。</p>
+      <p class="mut"><b>explore</b>：v2 是只读<b>定位器</b>；grit 是理解<b>压缩器</b>（深读全链、只回 digest，正是"避免污染、只留有用内容"）。同槽合成：取 v2 外壳 + grit 摘要契约；<b>显式放行 <code>clone_repo</code></b>（否则 v2 的 <code>* deny</code> 会拒）。</p>
+      <p class="mut"><b>plan</b>：采用 v2 原生 primary 模式；砍掉 grit 自建的可委派 plan 子代理（与 expert 重叠）。简单设计 build 自做，复杂设计交 expert。</p>
+      <p class="mut"><b>expert</b>：v2 无等价物，保留为唯一强档设计/决策顾问。</p>
+    </div>
+  </details>
+</section>
+
+<!-- 5 -->
+<section id="s5">
+  <div class="sec-h"><span class="n">05</span><h2>四个机制 + handoff + 工具面</h2></div>
+
+  <details open style="border-color:rgba(224,96,95,.45)">
+    <summary>B · 持续工作续跑（简化：无 todo、无判据库、模型自判完成）<span class="tagrow"><span class="badge b-warn">本轮重点</span></span></summary>
+    <div class="body">
+      <p class="mut"><b>目的</b>：<code>/ulw</code> 激活后，若模型一轮结束停下但目标未完成，自动推一把，直到它自己判断完成或触发护栏。</p>
+      <p class="mut"><b>触发器</b>：<b>会话空闲</b>这一时点（模型说完、无正在跑的工具/子代理）。</p>
+      <p class="mut"><b>续跑判定（继续 / 停止）</b>：① 未激活 → 不动；② 已激活且<b>未声明完成</b> → 护栏允许时注入一句"继续推进该目标"（带目标）；③ 模型<b>声明完成</b>（整行标记 <code>[grit:done:v1]</code>）→ 停。<b>完成由模型根据目标自行判断。</b></p>
+      <p class="mut"><b>护栏（兜底）</b>：2s 倒计时 · 冷却退避 · 失败上限 · 注入预算 · abort 窗口 · 上下文超限跳过 · 用户打断暂停 · 工具死循环（warn3/block5）· 指纹未变即停。</p>
+      <p class="mut"><b>状态</b>：仅 <code>grit/state/&lt;sid&gt;.json</code> 最小集（active / goal / 计时 / 计数）。<b>无逐条判据、无证据账本、无独立验证器。</b></p>
+      <div class="good"><b>为什么简化</b>：验证不与执行分离、不用专家（浪费）；模型按目标自判完成足够。旧版靠"扫 todo"判活，v2 已无此工具；新版不依赖任何外部清单。</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>A · 契约注入（/ulw）<span class="tagrow"><span class="badge b-ok">保留 · 微调</span></span></summary>
+    <div class="body"><p class="mut">/ulw 触发 → 注入<b>模式块</b>（场景契约/双证据/审查门/MANUAL QA/零容忍/完成判定/交接阶梯）一次（持久）；context 钩子负责<b>压缩恢复</b> + <b>每轮一行标记</b>（非持久）。注入格式改为独立块/合成消息（§6）。</p></div>
+  </details>
+
+  <details>
+    <summary>C · profile 引擎 + 校准<span class="tagrow"><span class="badge b-ok">保留 · 收缩</span></span></summary>
+    <div class="body"><p class="mut">热参数 / 3s TTL / <code>profile</code> 工具不变；<code>promptVariants</code> 降为纪律段级。<b>校准</b>：以 provider/model 作用域 context 钩子追加极短校准段（glm/deepseek/default）——v2 官方唯一自定义途径，且 v2 不覆盖这两个模型族。</p></div>
+  </details>
+
+  <details>
+    <summary>D · token 快照 + handoff + 工具面</summary>
+    <div class="body"><p class="mut"><b>D</b> 事件源在位。<b>handoff（会话交接）</b>：<code>session.create</code> + <code>session.prompt</code> + 本会话置停；模板单一来源 <code>contracts/handoff-template.md</code>。<b>工具面维持 5</b>：context_usage · system_time · clone_repo · handoff · profile（不新增 todo）。</p></div>
+  </details>
+</section>
+
+<!-- 6 -->
+<section id="s6">
+  <div class="sec-h"><span class="n">06</span><h2>注入格式规范（本轮修正）</h2></div>
+  <div class="card">
+    <p class="mut"><b>原则</b>：任何 grit 注入都用<b>独立、带标签的块</b>；<b>绝不拼进用户原文、绝不当成用户说的话</b>。</p>
+    <p class="mut"><b>两种载体</b>：① 系统提醒块 <code>&lt;system-reminder&gt;…&lt;/system-reminder&gt;</code>（用于每轮标记）；② 独立合成消息 <code>ctx.session.synthetic({sessionID, text, resume:false})</code>（用于模式激活与续跑提示）。</p>
+    <p class="mut"><b>标签命名</b>：统一 <code>&lt;grit:…&gt;</code> 命名空间 + 首尾哨兵，例：<code>&lt;grit:ulw-mode v1&gt;…&lt;/grit:ulw-mode&gt;</code>、<code>&lt;grit:continue v1&gt;…&lt;/grit:continue&gt;</code>、<code>&lt;grit:done v1&gt;…&lt;/grit:done&gt;</code>。</p>
+    <p class="mut"><b>为什么改</b>：OmO 把用户信息与注入都包成块，模型能区分"用户在说"与"harness 在说"；grit 旧做法（<code>text + "\n\n" + appended</code> 拼进用户消息）混淆来源 → 改为块/合成消息。</p>
+    <p class="mut"><b>缓存纪律</b>：只追加尾部块 / 一条尾随易变消息，永不改写已缓存前缀。</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section id="s7">
+  <div class="sec-h"><span class="n">07</span><h2>迁移 · 验证 · 风险</h2></div>
+  <details open>
+    <summary>迁移映射（旧 → 新）</summary>
+    <div class="body"><table>
+      <tr><th>旧</th><th>新</th></tr>
+      <tr><td>agents/*.md（7 全量正文）</td><td>删除；正文移到 contracts/discipline/；定义移到 agents 记录</td></tr>
+      <tr><td>frontmatter permission:/task:</td><td>permissions（action subagent/edit/shell）</td></tr>
+      <tr><td>机制 B 扫描 todowrite</td><td>简化续跑（激活 + 未声明完成 + 护栏；模型自判完成）</td></tr>
+      <tr><td>grit 的 plan 子代理</td><td>删除；用 v2 原生 plan primary</td></tr>
+      <tr><td>契约/续跑注入（拼进用户消息）</td><td>独立块 / 合成消息</td></tr>
+      <tr><td>explore 能力</td><td>v2 外壳 + grit 摘要契约 + 放行 clone_repo</td></tr>
+    </table></div>
+  </details>
+  <details open>
+    <summary>验证矩阵（动手前先钉死）</summary>
+    <div class="body"><table>
+      <tr><th>#</th><th>命题</th><th>状态</th></tr>
+      <tr><td>V-1</td><td>JS 侧 context 钩子可改 event.system</td><td><span class="badge b-ok">✅ 已确认</span></td></tr>
+      <tr><td>V-2</td><td>追加段与 optimize/identity 的钩子执行顺序</td><td><span class="badge b-warn">需实验</span></td></tr>
+      <tr><td>V-3</td><td>agents 配置记录落点</td><td><span class="badge b-warn">需实验</span></td></tr>
+      <tr><td>V-4</td><td>省略 system 后 explore 的 PROMPT_EXPLORE 保留</td><td><span class="badge b-warn">待实测</span></td></tr>
+      <tr><td>V-5</td><td>SystemPart 形状 {type:"text",text}</td><td><span class="badge b-ok">✅ 官方示例</span></td></tr>
+      <tr><td>V-6</td><td>v2 无 todo 机制</td><td><span class="badge b-ok">✅ 已确认</span></td></tr>
+      <tr><td>V-7</td><td>session.synthetic 发非用户注入、不进用户消息</td><td><span class="badge b-warn">待实测</span></td></tr>
+      <tr><td>V-8</td><td>provider 作用域钩子按 provider/ model 生效</td><td><span class="badge b-warn">待实测</span></td></tr>
+      <tr><td>V-9</td><td>确定性冒烟全绿</td><td><span class="badge b-warn">待跑</span></td></tr>
+    </table>
+    <p class="mut"><span class="badge b-warn">架构改动前必须先过 V-2 / V-3 / V-4。</span></p></div>
+  </details>
+  <details>
+    <summary>风险与退路</summary>
+    <div class="body"><table>
+      <tr><th>风险</th><th>影响</th><th>退路</th></tr>
+      <tr><td>模型自判完成</td><td>过早声明 / 永不言完成</td><td>护栏（预算+停滞+指纹）兜底</td></tr>
+      <tr><td>#42421 可能加回 todo 开关</td><td>未来 v2 自带 todo</td><td>届时让位原生</td></tr>
+      <tr><td>V-2/V-3 未知</td><td>接线错位 / 落点不可热重载</td><td>幂等哨兵 + 固定位；退回物化薄 md</td></tr>
+      <tr><td>校准钩子只到 provider</td><td>同 provider 它模型被误加</td><td>钩子内按 event.model.id 再判</td></tr>
+      <tr><td>explore 拒绝 clone_repo</td><td>grit 工具用不了</td><td>显式放行</td></tr>
+    </table></div>
+  </details>
+</section>
+
+<!-- 8 -->
+<section id="s8">
+  <div class="sec-h"><span class="n">08</span><h2>分阶段实施计划</h2></div>
+  <div class="card"><ol class="mut">
+    <li>实验先行（V-2/V-3/V-4/V-7/V-8）。未过不改架构。</li>
+    <li>纪律段抽取（去 todo 依赖、加"完成纪律"）+ 校准段（provider 作用域）。</li>
+    <li>薄覆盖落地（合成 agents 记录；删 agents/*.md；explore 放行 clone_repo）。</li>
+    <li>追加通道（按 event.agent / providerID 追加，独立块）。</li>
+    <li>机制 B 简化（激活 + 未声明完成 + 护栏；删 todo 依赖与判据库残留）。</li>
+    <li>plan 回归原生（删自建 plan 子代理 + 更新 build 路由表 + costRatio）。</li>
+    <li>注入格式落地（合成消息 / 标签块，替换字符串拼接）。</li>
+    <li>harness 更新 + 验证矩阵全过 + 重新部署。</li>
+    <li>文档重写（README 补 browse、消除模板双写与计数漂移）。</li>
+  </ol>
+  <p class="mut">每阶段验收证据（R13/R14）：真实执行痕迹。</p></div>
+</section>
+
+<section>
+  <div class="sec-h"><span class="n">附</span><h2>明确不做</h2></div>
+  <div class="card"><p class="mut">不重做 todo；不引入判据库/证据账本/独立验证器/专家验证；不引入 category / 变体代理 / per-家族双套正文 / architect；不做关键词触发 ULW；<b>不把注入拼进用户消息</b>；不用 md 承载薄覆盖；不改 v2 原生层。</p></div>
+</section>
+
+<footer>grit 设计修订 3 · 方案定稿 · 2026-10-14 · 纯静态自包含页。平铺版见同目录 <code>DESIGN-v3.md</code>。</footer>
+</div>
+
+<script>
+(function(){
+  var btn=document.getElementById('toggleAll'), open=false;
+  btn.addEventListener('click',function(){
+    open=!open;
+    document.querySelectorAll('details').forEach(function(d){d.open=open});
+    btn.textContent=open?'全部收起':'全部展开';
+  });
+})();
+</script>
+</body>
+</html>

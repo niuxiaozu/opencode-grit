@@ -1,30 +1,41 @@
 /**
- * grit — 轻量多代理套件插件（v2 运行时版，按 docs/DESIGN.md 终稿实现；前身 omo-lite，已更名）
+ * grit — 轻量多代理套件插件（OpenCode V2 运行时版，DISIGN-v3 实现）。
  *
- * 【OpenCode V2 插件 API】default 导出 = Plugin.define({ id, setup(ctx) })。
- * V1 → V2 接线映射（行为语义与 v1 版保持一致）：
- *   config（启动自检）                    → setup 内直接执行
- *   chat.message（哨兵处理，机制 A）       → ctx.session.hook("prompt", ...)
- *   experimental.chat.messages.transform  → ctx.session.hook("context", ...)（消息形状为扁平 {type,text}）
- *   chat.params（机制 C 热参数）           → 同一 "context" 钩子内写 event.options
- *   event（机制 B/D 数据源）              → ctx.event.subscribe()；V2 载荷在 event.data
- *     - token 快照：session.step.ended / session.usage.updated（字段 input/output/reasoning/cache 与 v1 相同）
- *     - responseObserved：session.tool.called / session.tool.success / message.updated
- *     - 续跑触发：session.idle（todo 无事件，改为 idle 时经 ctx.session.context 扫最新 todowrite 工具调用）
- *   tool map（5 工具）                    → ctx.tool.transform（JSON Schema 入参，返回 {content}）
- *   dispose                               → setup 返回的清理函数
+ * 【OpenCode V2 插件 API】default 导出 = Plugin.define({ id, setup(ctx) })。接线映射：
+ *   setup 内直接执行（启动自检）        → 原 V1 config 钩子
+ *   ctx.session.hook("prompt", ...)    → 用户提示（/ulw、/stop 哨兵；真实消息打断判定）
+ *   ctx.session.hook("context", ...)   → 请求组装：①角色纪律（→系统提示词）②ULW 动态注入（→消息通道）
+ *   ctx.event.subscribe()              → 机制 B/D 数据源（载荷在 ev.data）
+ *     - 续跑触发：session.execution.succeeded；interrupted / failed 只作护栏输入（**不再续跑**）
+ *     - token 快照：**只取 session.step.ended（单步用量）**，算法照 OpenCode 官方
+ *       （input+output+reasoning+cache.read+cache.write ÷ 模型 limit.context）；
+ *       session.usage.updated 是会话累计值，**不能**当作"当前上下文大小"
+ *     - 事件事实（按安装版 @opencode/schema 2.0.20 的 event-manifest 逐条核对）：有 session.idle、
+ *       有 session.execution.*，**没有 session.error**（那是 v1 事件）⇒ abort / 上下文超限护栏
+ *       必须走 session.execution.interrupted / .failed，不能走 session.error。
+ *   ctx.tool.transform                 → 5 工具（context_usage/system_time/clone_repo/handoff/profile）
  *
- * 四机制（各自独立可关，profile features.* 热读 + GRIT_DISABLE 总闸）：
- *   A contract-injector   /ulw 哨兵→全量契约注入(持久)；每轮 1 行标记(非持久)；压缩后恢复
- *   B todo-continuation   todo 驱动续跑；13 道门 + 2s 倒计时 + 多重熔断
- *   C profile-engine      热参数（temperature/topP/variant）；profile 工具(list/show/switch)
- *   D token-snapshot      被动缓存 token 快照（A/B/context_usage 的数据源）
- * 工具：context_usage / system_time / clone_repo / handoff / profile
+ * 【v3 关键约束（实验证据，见 docs/DESIGN-v3.md §11）】
+ *   - 不设 agent.system：md/配置记录里写 system 会【整段替换】基础提示词并跳过 provider 变体与
+ *     工具指导；省略 system 才能保留内置 prompt（如 explore 的 PROMPT_EXPLORE，V-4 实测）。
+ *   - 注入分两条通道：**稳定内容**（角色纪律，不随会话变化）→ 系统提示词（同内容同位置 ⇒ 不改前缀缓存）；**会话中触发的动态内容**（激活标记/授权与退出提醒）→ 消息通道的带标签块（只追加尾部）。
+ *     - 契约是**一条真消息**：进入 ULW（ulw_enter）与压缩完成（session.compaction.ended）都用 ctx.session.prompt
+ *     把「契约 + 目标」落库一次；工具只回一句短确认。退出提醒由账本标记驱动（退出后下一轮组装贴一次）。
+ *   - 注入一律走【消息通道】的独立带标签块（或工具返回）；【绝不改写系统提示词】——用户一输入就改系统提示词会让前缀缓存整段失效。
+ *   - v2 无 todo 工具（V-6）：机制 B 不扫描清单，完成由模型自判（调用 ulw_exit 退出）。
+ *   - ULW 由工具进入/退出：/ulw 命令文本含授权标识 [GRIT:ULW:START]，模型调 ulw_enter(goal) 时校验「上一条用户消息」含该标识才进入；ulw_exit 退出（目标作参数，不做文本嗅探）。
  *
- *   铁律（DESIGN §2）：插件源码零提示词文本（契约全外置 contracts/）；
- * 文本匹配仅两处（/ulw、/stop-continuation 首行/次行整行哨兵），无正则无子串；
- * 一切注入只追加尾部或固定位置，永不改写历史。
- * 可测试的纯函数全部挂在 default 导出对象上（V2 loader 只读 id/setup，附加属性无副作用）。
+ * 四机制（各自独立可关，profile.features.* 热读 + GRIT_DISABLE 总闸）：
+ *   A contract-injector   /ulw 携带授权标识 → 模型调用 ulw_enter（校验标识）进入（契约作为一条真消息注入）；每轮一行标记；压缩后重注入契约
+ *   B continuation        执行空闲时，若仍处于 ULW → 独立块续跑；模型调用 ulw_exit 或用户 /ulw-exit 退出
+ *   C profile-engine      profile 工具（list/show/switch，改 agents 记录）
+ *   D token-snapshot      被动缓存 token 快照（context_usage 与护栏同源）
+ * 工具：context_usage / system_time / clone_repo / handoff / profile / ulw_enter / ulw_exit
+ *
+ *   外置约定（2026-10-18 收窄）：契约与角色纪律外置 contracts/（纯文本、可自由改）；
+ *   带变量拼接的便签/回话留在本文件（它们是模板，外置反而更难维护）。文本匹配仅整行哨兵；
+ * 一切注入只追加尾部，永不改写历史。
+ * 可测试的纯函数全部挂在 default 导出对象上（V2 loader 只读 id/setup）。
  */
 
 import { Plugin } from "@opencode/plugin"
@@ -35,19 +46,28 @@ import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
   validateProfile,
-  materializeAll,
+  buildAgentRecords,
   loadActiveProfile,
+  loadProfileByName,
+  readAgentsIndex,
 } from "../scripts/materialize-core.ts"
 
-// ===================== 常量与哨兵（DESIGN §5.2，最终值） =====================
+// ===================== 常量与哨兵 =====================
 
-const SENTINEL_ULW = "[grit:ulw:v1]"
-const SENTINEL_STOP = "[grit:ulw-stop:v1]"
-const SENTINEL_CONTINUE = "[grit:continue:v1]"
-const SENTINEL_CONTRACT_OPEN = "<!-- grit:ulw-contract:v1 -->"
-const SENTINEL_CONTRACT_CLOSE = "<!-- /grit:ulw-contract -->"
-const MARKER_TAG = "[grit:ulw-active]"
-const ALL_SENTINELS = [SENTINEL_ULW, SENTINEL_STOP, SENTINEL_CONTINUE, SENTINEL_CONTRACT_OPEN, SENTINEL_CONTRACT_CLOSE, MARKER_TAG]
+const AGENT_NAMES = ["build", "plan", "explore", "general", "expert", "browse"]
+/** 曾被 grit 托管、现已移除的席位（安装/切换时一并从 opencode.json 清除，避免残留）。 */
+const REMOVED_AGENT_NAMES = ["factory"]
+/** /ulw 命令携带的授权标识：ulw_enter 校验「上一条用户消息」是否含它，无则拒绝进入。 */
+const ULW_AUTH_TOKEN = "[GRIT:ULW:START]"
+const SENTINEL_EXIT = "[GRIT:ULW:EXIT]"
+const SENTINEL_CONTINUE = "[GRIT:ULW:CONTINUE]"
+const CONTRACT_OPEN = "<!-- GRIT:ULW:CONTRACT -->"
+const CONTRACT_CLOSE = "<!-- /GRIT:ULW:CONTRACT -->"
+const MARKER_TAG = "[GRIT:ULW:ACTIVE]"
+const ARMED_TAG = "[GRIT:ULW:ARMED]"
+const EXITED_TAG = "[GRIT:ULW:EXITED]"
+/** 插件拦截的整行哨兵（/ulw 命令本身按真实用户消息处理，不做拦截）。 */
+const PROMPT_SENTINELS = [SENTINEL_EXIT, SENTINEL_CONTINUE]
 
 const DEFAULT_CONTEXT_LIMIT = 1_000_000
 const STATE_TTL_MS = 14 * 24 * 3600 * 1000
@@ -63,15 +83,8 @@ export interface TokenSnapshot {
   cache?: { read: number; write: number }
 }
 
-export interface TodoItem {
-  id?: string
-  content: string
-  status: string
-  priority?: string
-}
-
 export interface UlwState {
-  schemaVersion: 1
+  schemaVersion: 2
   sessionID: string
   directory: string
   active: boolean
@@ -82,10 +95,11 @@ export interface UlwState {
   stopReason: StopReason | null
   pauseReason: PauseReason | null
   totalInjections: number
-  missingTodoNudgeUsed: boolean
+  /** 退出后是否还有一条「已退出」提醒待贴（贴一次即清；由账本状态驱动，不靠扫用户消息里的哨兵）。 */
+  exitNoticePending: boolean
 }
 
-export type StopReason = "manual" | "aborted" | "stagnated" | "completed" | "context-overflow" | "injection-budget"
+export type StopReason = "manual" | "aborted" | "stagnated" | "completed" | "context-overflow" | "injection-budget" | "tool-loop"
 export type PauseReason = "user-interruption" | "max-failures" | "directive-response"
 
 export interface Counters {
@@ -93,9 +107,10 @@ export interface Counters {
   consecutiveFailures: number
   stagnationCount: number
   awaitingProgress: boolean
-  responseObserved: boolean
+  fingerprint: string | null
   abortAt: number | null
-  lastTodo: { completed: number; idStatus: Record<string, string> } | null
+  /** 上次"兜底重贴契约"的时间（context 钩子里 60 秒节流；正常路径走不到）。 */
+  contractRestoreAt?: number
 }
 
 export interface ContinuationConfig {
@@ -108,13 +123,15 @@ export interface ContinuationConfig {
   abortWindowMs: number
   contextSkipPct: number
   maxTotalInjections: number
-  todoListMaxItems: number
+  toolLoopWarn: number
+  toolLoopStop: number
 }
 
 export const DEFAULT_CONTINUATION: ContinuationConfig = {
   countdownSeconds: 2, cooldownBaseMs: 5000, backoffPowCap: 5,
-  maxConsecutiveFailures: 5, failureResetWindowMs: 600000, maxStagnation: 3,
-  abortWindowMs: 3000, contextSkipPct: 85, maxTotalInjections: 200, todoListMaxItems: 10,
+  maxConsecutiveFailures: 5, failureResetWindowMs: 600000, maxStagnation: 2,
+  abortWindowMs: 3000, contextSkipPct: 85, maxTotalInjections: 200,
+  toolLoopWarn: 3, toolLoopStop: 5,
 }
 
 // ===================== 纯函数（挂 default 供测试） =====================
@@ -134,7 +151,9 @@ function toSnapshot(tokens: unknown): TokenSnapshot | null {
 }
 
 function usedTokens(s: TokenSnapshot): number {
-  return s.input + s.output + s.reasoning + (s.cache?.read ?? 0)
+  // 与 OpenCode 官方算法一致：input + output + reasoning + cache.read + cache.write
+  // （官方实现见 cli 二进制：session.step.ended → tokens.input+output+reasoning+cache.read+cache.write）
+  return s.input + s.output + s.reasoning + (s.cache?.read ?? 0) + (s.cache?.write ?? 0)
 }
 
 function contextOccupancy(tokens: TokenSnapshot, limit: number): number | null {
@@ -177,184 +196,327 @@ function leanHandoffSummary(): string {
   return [
     "[HANDOFF] 【会话交接摘要】",
     "",
-    "## 当前状态",
-    "-（上一会话未提供富摘要：请先浏览本项目关键文件快速定位现状）",
-    "## 已确认的事实（无需重新探索）",
+    "## 1. 任务与目标",
+    "-（上一会话未提供摘要）",
+    "## 2. 当前状态",
+    "-（未知：请先浏览本项目关键文件定位现状）",
+    "## 3. 已确认的事实（无需重新探索）",
     "- 无",
-    "## 待处理的工作",
-    "- 沿用上一会话的任务方向；先用 todowrite 重建任务清单再推进",
-    "## 已知的坑",
+    "## 4. 待处理的工作",
+    "- 无",
+    "## 5. 已知的坑",
+    "- 无",
+    "## 6. 验证情况",
+    "- 无",
+    "## 7. 会话级状态",
     "- 无",
   ].join("\n")
 }
 
-/** 哨兵匹配：首行或第二行整行精确相等（容错 opencode 对命令模板的轻微改写；DESIGN §13.4-① fallback）。 */
+/** 哨兵匹配：首行或第二行整行精确相等。 */
 function matchSentinel(text: string): string | null {
   const lines = text.split(/\r?\n/)
   for (const line of [lines[0], lines[1]]) {
     if (line === undefined) continue
-    for (const s of ALL_SENTINELS) if (line === s) return s
+    for (const s of PROMPT_SENTINELS) if (line === s) return s
   }
   return null
 }
 
-/** 契约拼装：ulw.md + 校准段 + handoff 模板，包 system-reminder（opencode 原生动态内容惯例）+ 契约哨兵。纯字符串。 */
-function assembleContract(ulwText: string, calibrationText: string, handoffText: string): string {
-  const body = ulwText
-    .replace("{{calibration}}", calibrationText)
-    .replace("{{handoff_template}}", handoffText)
-  return `<system-reminder>\n${SENTINEL_CONTRACT_OPEN}\n${body.trim()}\n${SENTINEL_CONTRACT_CLOSE}\n</system-reminder>`
+/** 契约拼装：ulw.md（含交接模板槽位）包 us 首尾哨兵。纯字符串。校准段改为运行时按模型追加，不入契约。 */
+function assembleContract(ulwText: string, handoffText: string): string {
+  const body = ulwText.replace("{{handoff_template}}", handoffText)
+  return `${CONTRACT_OPEN}\n${body.trim()}\n${CONTRACT_CLOSE}`
+}
+
+/** 纪律段块（独立带标签，防重复）：席位专属（+ 档里指定的变体）。 */
+function disciplineBlock(name: string, content: string): string {
+  return `<GRIT-DISCIPLINE agent="${name}">\n[GRIT:DISCIPLINE:${name}]\n${content.trim()}\n</GRIT-DISCIPLINE>`
 }
 
 function markerLine(objective: string): string {
-  const obj = objective.trim().slice(0, 60)
-  return `<system-reminder>${MARKER_TAG} 持续工作模式进行中（目标：${obj || "（待提炼）"}）。已注入的纪律契约持续有效，按 todo 清单继续推进。</system-reminder>`
+  const obj = objective.trim()
+  return `<system-reminder>${MARKER_TAG} 持续工作模式进行中（目标：${obj || "（未设定）"}）。纪律契约持续有效；完成后调用 ulw_exit 工具退出。</system-reminder>`
 }
 
-function todoProgressed(last: Counters["lastTodo"], todos: TodoItem[]): boolean {
-  const completed = todos.filter((t) => t.status === "completed").length
-  if (last === null) return false
-  if (completed !== last.completed) return true
-  const idStatus: Record<string, string> = {}
-  for (const [i, t] of todos.entries()) idStatus[t.id ?? `#${i}`] = t.status
-  for (const [k, v] of Object.entries(last.idStatus)) {
-    if (idStatus[k] !== v) return true
+function continuationBlock(objective: string): string {
+  const obj = objective.trim()
+  return [
+    "<system-reminder>",
+    SENTINEL_CONTINUE,
+    "持续工作模式仍在进行：继续推进既定目标，不要停下来等待确认。",
+    "- 按已注入的纪律契约执行：真实证据、自己验证、别削弱判据。",
+    "- 只有当目标真正完成（每条判据都有真实执行痕迹）时，才调用 ulw_exit 工具退出。",
+    obj ? `（目标：${obj}）` : "",
+    "</system-reminder>",
+  ].filter(Boolean).join("\n")
+}
+
+/**
+ * 插件自己以「真消息」形式注入的文本（契约同步 / 续跑提示）。prompt 钩子必须把它们当成插件消息：
+ * 契约块一旦被当成用户插话，会把账本打成 user-interruption 暂停，刚进入就被按住。
+ */
+function isPluginInjectedText(text: string): boolean {
+  return text.includes(CONTRACT_OPEN) || text.includes(SENTINEL_CONTINUE)
+}
+
+/**
+ * 进入 ULW（以及压缩后恢复）时注入的「契约 + 目标」块：用原生 system-reminder 包裹，
+ * 作为一条真实用户消息落库 —— 后续每一轮请求都看得到，不会随当轮工具结果一起被丢。
+ */
+function contractNotice(contract: string, objective: string): string {
+  const obj = objective.trim()
+  const head = [
+    "<system-reminder>",
+    "以下是持续工作模式（ULW）的纪律契约，自本条消息起生效，直到你调用 ulw_exit 退出。",
+    obj ? `目标：${obj}` : "",
+  ].filter(Boolean).join("\n")
+  return `${head}\n\n${contract}\n</system-reminder>`
+}
+
+/** 「已退出」提醒：两条退出路径共用同一段文本，由账本标记驱动、贴一次即清。 */
+function exitNoticeBlock(): string {
+  return `<system-reminder>${EXITED_TAG} ULW 已退出：纪律契约（场景契约/验收证据/审查门/QA 矩阵/零容忍/完成判定）自此不再生效。请用一两句话总结当前进度与剩余工作后结束回合，不要继续推进。</system-reminder>`
+}
+
+/** 取一条消息的纯文本（内容兼容 v2 扁平 {role,content:[{type,text}]} 与 session.context 的形态）。 */
+function messageText(m: unknown): string {
+  if (!m || typeof m !== "object") return ""
+  const mm = m as { text?: unknown; content?: unknown }
+  if (typeof mm.text === "string") return mm.text
+  if (Array.isArray(mm.content)) {
+    return mm.content
+      .filter((p): p is { type?: unknown; text?: unknown } => !!p && typeof p === "object")
+      .filter((p) => p.type === "text" && typeof p.text === "string")
+      .map((p) => String(p.text))
+      .join("\n")
   }
-  for (const k of Object.keys(idStatus)) {
-    if (last.idStatus[k] === undefined) return true
+  return ""
+}
+
+/** 最后一条 assistant 消息的纯文本。 */
+function lastAssistantText(msgs: unknown[]): string {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i] as { type?: unknown; role?: unknown } | null
+    if (!m) continue
+    if (m.type === "assistant" || m.role === "assistant") {
+      const t = messageText(m)
+      if (t.trim() !== "") return t
+    }
   }
-  return false
+  return ""
 }
 
-function todoIdStatus(todos: TodoItem[]): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const [i, t] of todos.entries()) out[t.id ?? `#${i}`] = t.status
-  return out
+/** 最后一条 user 消息的纯文本。 */
+function lastUserTextOf(msgs: unknown[]): string {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i] as { type?: unknown; role?: unknown } | null
+    if (!m) continue
+    if (m.type === "user" || m.role === "user") {
+      const t = messageText(m)
+      if (t.trim() !== "") return t
+    }
+  }
+  return ""
 }
 
-export type ContinueActionKind = "countdown" | "nudge" | "skip" | "pause" | "stop"
+/** 消息里是否已含某标签（注入幂等判据）。 */
+function messagesContain(msgs: unknown[], needle: string): boolean {
+  return Array.isArray(msgs) && msgs.some((m) => messageText(m).includes(needle))
+}
+
+/**
+ * 深度取一条消息的文本：顶层 text part **加上** tool part 内嵌的 state.content / state.output。
+ * v2 里工具结果是 `{type:"tool", state:{content:[{type:"text",text}]}}`——契约正是这样被 ulw_enter 携带的，
+ * 只用顶层 text part 会看不见它（导致"契约已注入"判据恒为假、每轮重注入）。
+ */
+function deepMessageText(m: unknown): string {
+  if (!m || typeof m !== "object") return ""
+  const mm = m as { text?: unknown; content?: unknown }
+  const parts: string[] = []
+  const take = (p: unknown): void => {
+    if (!p || typeof p !== "object") return
+    const pp = p as { text?: unknown; state?: unknown }
+    if (typeof pp.text === "string") parts.push(pp.text)
+    const st = pp.state
+    if (!st || typeof st !== "object") return
+    const s = st as { content?: unknown; output?: unknown }
+    if (Array.isArray(s.content)) {
+      for (const c of s.content) {
+        if (!c || typeof c !== "object") continue
+        const cc = c as { type?: unknown; text?: unknown }
+        if (typeof cc.text === "string" && (cc.type === undefined || cc.type === "text")) parts.push(cc.text)
+      }
+    }
+    if (typeof s.output === "string") parts.push(s.output)
+  }
+  if (typeof mm.text === "string") parts.push(mm.text)
+  if (Array.isArray(mm.content)) for (const p of mm.content) take(p)
+  return parts.join("\n")
+}
+
+/** 契约是否已在会话历史里（含 ulw_enter 的工具结果）。压缩后工具结果被丢弃 ⇒ 判假 ⇒ 触发恢复注入。 */
+function contractInHistory(msgs: unknown[]): boolean {
+  return Array.isArray(msgs) && msgs.some((m) => deepMessageText(m).includes(CONTRACT_OPEN))
+}
+
+/** 从 v2 结构化错误（SessionStructuredError）里取可用于分类的文本；形状未知 ⇒ 宽容抽取。 */
+function errorTextOf(err: unknown): string {
+  if (typeof err === "string") return err
+  if (!err || typeof err !== "object") return ""
+  const e = err as Record<string, unknown>
+  return [e.name, e.message, e.code, e.type, e._tag].filter((v): v is string => typeof v === "string").join(" ")
+}
+
+/**
+ * 把带标签的注入块追加到「最后一条 user 消息」尾部（只动最新一条、不改写历史前缀、不碰系统提示词）；
+ * 没有 user 消息时追加一条独立 user 消息。
+ */
+function appendInject(msgs: any[], block: string): void {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i] as any
+    if (!m || (m.role !== "user" && m.type !== "user")) continue
+    if (Array.isArray(m.content)) {
+      m.content.push({ type: "text", text: block })
+      return
+    }
+    if (typeof m.text === "string") {
+      m.text = `${m.text}\n\n${block}`
+      return
+    }
+    return
+  }
+  msgs.push({ id: `msg_grit_${Date.now()}`, role: "user", content: [{ type: "text", text: block }] })
+}
+
+/** 响应指纹（最后一条 assistant 文本的短哈希）——用于"指纹未变即停"。 */
+function responseFingerprint(msgs: unknown[]): string {
+  const t = lastAssistantText(msgs)
+  return createHash("sha1").update(t).digest("hex").slice(0, 12)
+}
+
+/** 同一工具调用（name+input）的最大重复次数——工具死循环护栏的判据。 */
+function maxToolRepeat(msgs: unknown[], window = 60): number {
+  const counts = new Map<string, number>()
+  let max = 0
+  const start = Math.max(0, msgs.length - window)
+  for (let i = start; i < msgs.length; i++) {
+    const m = msgs[i] as { content?: unknown } | null
+    const c = m?.content
+    if (!Array.isArray(c)) continue
+    for (const p of c) {
+      if (!p || typeof p !== "object") continue
+      const pp = p as { type?: unknown; name?: unknown; state?: unknown; input?: unknown }
+      if (pp.type !== "tool" || typeof pp.name !== "string") continue
+      const st = pp.state as { input?: unknown } | undefined
+      const input = st?.input ?? pp.input ?? {}
+      let sig: string
+      try {
+        sig = `${pp.name}:${JSON.stringify(input)}`
+      } catch {
+        sig = `${pp.name}:?`
+      }
+      const n = (counts.get(sig) ?? 0) + 1
+      counts.set(sig, n)
+      if (n > max) max = n
+    }
+  }
+  return max
+}
+
+export type ContinueActionKind = "countdown" | "skip" | "pause" | "stop"
+export interface ContinueInput {
+  occupancy: number | null
+  fingerprint: string
+  maxToolRepeat: number
+}
 export interface ContinueAction {
   kind: ContinueActionKind
   reason?: string
-  todos?: TodoItem[]
   counters: Counters
   state: UlwState
 }
 
-/** 续跑门序列（DESIGN §7.7.2，G1–G13）。纯函数：返回动作 + 新计数器/状态（不落盘）。 */
+/**
+ * 续跑门（简化为"激活 + 未声明完成 + 护栏"）。纯函数：返回动作 + 新计数器/状态（不落盘）。
+ * 门序：非激活→abort 窗口→已声明完成→暂停→停滞→失败上限→冷却→上下文过高→工具死循环→预算→countdown。
+ */
 function decideContinuation(
   stateIn: UlwState,
   countersIn: Counters,
   cfg: ContinuationConfig,
-  todos: TodoItem[],
-  occupancy: number | null,
+  input: ContinueInput,
   now: number,
 ): ContinueAction {
   const counters: Counters = { ...countersIn }
   const state: UlwState = { ...stateIn }
-  // G1 由调用方（enabled 检查）承担——此处假设已启用。
-  if (!state.active || state.stopReason !== null) return { kind: "skip", reason: state.stopReason ? "stopped" : "not-active", counters, state } // G2
-  if (counters.awaitingProgress && counters.lastInjectedAt === -1) return { kind: "skip", reason: "in-flight", counters, state } // G3（防御位）
-  if (counters.abortAt !== null && now - counters.abortAt < cfg.abortWindowMs) return { kind: "skip", reason: "abort-window", counters, state } // G4
-  // todo 进展判定（解除 pause / 清 stagnation / 清 awaitingProgress）
-  const progressed = todoProgressed(counters.lastTodo, todos)
-  counters.lastTodo = { completed: todos.filter((t) => t.status === "completed").length, idStatus: todoIdStatus(todos) }
-  if (progressed) {
-    counters.stagnationCount = 0
-    if (state.pauseReason === "user-interruption" || state.pauseReason === "directive-response" || state.pauseReason === "max-failures") {
+  if (!state.active || state.stopReason !== null) {
+    return { kind: "skip", reason: state.stopReason ? "stopped" : "not-active", counters, state }
+  }
+  if (counters.abortAt !== null && now - counters.abortAt < cfg.abortWindowMs) {
+    return { kind: "skip", reason: "abort-window", counters, state }
+  }
+  if (state.pauseReason !== null) {
+    if (state.pauseReason === "max-failures" && counters.lastInjectedAt > 0 && now - counters.lastInjectedAt >= cfg.failureResetWindowMs) {
       state.pauseReason = null
+      counters.consecutiveFailures = 0
+    } else if ((state.pauseReason === "directive-response" || state.pauseReason === "user-interruption") && input.fingerprint !== counters.fingerprint) {
+      // 用户插话/中止后模型已产出新响应 ⇒ 解除暂停回到常规门（仍受冷却/停滞/预算约束）。
+      // 没有这条，用户插一次话 ULW 就永久停摆（"暂停"退化成"报废"）。
+      state.pauseReason = null
+      counters.stagnationCount = 0
+    } else {
+      return { kind: "skip", reason: `paused:${state.pauseReason}`, counters, state }
+    }
+  }
+  // 停滞：注入后本轮响应指纹未变化 → 无进展
+  if (counters.awaitingProgress) {
+    if (counters.fingerprint !== null && counters.fingerprint === input.fingerprint) {
+      counters.stagnationCount += 1
+      if (counters.stagnationCount >= cfg.maxStagnation) {
+        state.stopReason = "stagnated"
+        state.active = false
+        return { kind: "stop", reason: "stagnated", counters, state }
+      }
+    } else {
+      counters.stagnationCount = 0
     }
     counters.awaitingProgress = false
-    counters.consecutiveFailures = 0
   }
-  // G10 自动解除：max-failures 暂停超过 failureResetWindowMs
-  if (state.pauseReason === "max-failures" && counters.lastInjectedAt > 0 && now - counters.lastInjectedAt >= cfg.failureResetWindowMs) {
-    state.pauseReason = null
-    counters.consecutiveFailures = 0
-  }
-  if (counters.awaitingProgress && counters.responseObserved && !progressed && state.pauseReason === null) {
-    counters.stagnationCount += 1
-    if (counters.stagnationCount >= cfg.maxStagnation) {
-      state.stopReason = "stagnated"
-      state.active = false
-      return { kind: "stop", reason: "stagnated", counters, state } // G5 终态
-    }
-    state.pauseReason = "directive-response"
-    counters.awaitingProgress = false
-  }
-  if (state.pauseReason !== null) return { kind: "skip", reason: `paused:${state.pauseReason}`, counters, state } // G5/G6 停留
-  const incomplete = todos.filter((t) => t.status === "pending" || t.status === "in_progress")
-  const allCompleted = todos.length > 0 && incomplete.length === 0
-  if (allCompleted) {
-    state.stopReason = "completed"
-    state.active = false
-    return { kind: "stop", reason: "completed", counters, state } // G8
-  }
+  counters.fingerprint = input.fingerprint
   if (counters.consecutiveFailures >= cfg.maxConsecutiveFailures) {
     state.pauseReason = "max-failures"
-    return { kind: "pause", reason: "max-failures", counters, state } // G10（先于冷却：否则退避封顶期 pause 不可达）
+    return { kind: "pause", reason: "max-failures", counters, state }
   }
   if (now - counters.lastInjectedAt < cfg.cooldownBaseMs * Math.pow(2, Math.min(counters.consecutiveFailures, cfg.backoffPowCap))) {
-    return { kind: "skip", reason: "cooldown", counters, state } // G9
+    return { kind: "skip", reason: "cooldown", counters, state }
   }
-  if (occupancy !== null && occupancy >= cfg.contextSkipPct) {
-    return { kind: "skip", reason: "context-high", counters, state } // G11
+  if (input.occupancy !== null && input.occupancy >= cfg.contextSkipPct) {
+    return { kind: "skip", reason: "context-high", counters, state }
+  }
+  if (input.maxToolRepeat >= cfg.toolLoopStop) {
+    state.stopReason = "tool-loop"
+    state.active = false
+    return { kind: "stop", reason: "tool-loop", counters, state }
   }
   if (state.totalInjections >= cfg.maxTotalInjections) {
     state.stopReason = "injection-budget"
     state.active = false
-    return { kind: "stop", reason: "injection-budget", counters, state } // G13
+    return { kind: "stop", reason: "injection-budget", counters, state }
   }
-  if (todos.length === 0) {
-    if (!state.missingTodoNudgeUsed) {
-      state.missingTodoNudgeUsed = true
-      return { kind: "nudge", counters, state } // G7 建清单提醒
-    }
-    return { kind: "skip", reason: "no-todos", counters, state }
-  }
-  return { kind: "countdown", todos: incomplete, counters, state }
+  return { kind: "countdown", counters, state }
 }
 
-export type EventClass = "user" | "self" | "assistant" | "activity" | "abort" | "overflow" | "other"
-
-/** 非 idle 事件分类（DESIGN §7.7.5）。纯函数。 */
-function classifyEvent(input: { role?: string; firstLine?: string; errorText?: string }): EventClass {
-  if (input.errorText !== undefined) {
-    const t = input.errorText.toLowerCase()
-    if (t.includes("abort")) return "abort"
-    if (t.includes("token limit") || t.includes("context") || t.includes("overflow") || t.includes("too large")) return "overflow"
-    return "other"
-  }
-  if (input.role === "user") {
-    const fl = input.firstLine ?? ""
-    for (const s of ALL_SENTINELS) if (fl === s) return "self"
-    return "user"
-  }
-  if (input.role === "assistant") return "assistant"
-  return "activity"
+export type EventClass = "abort" | "overflow" | "other"
+/** 仅用于错误事件分类（abort / 上下文超限）。纯函数。 */
+function classifyEvent(input: { errorText?: string }): EventClass {
+  const t = (input.errorText ?? "").toLowerCase()
+  if (t.includes("abort")) return "abort"
+  if (t.includes("token limit") || t.includes("context") || t.includes("overflow") || t.includes("too large")) return "overflow"
+  return "other"
 }
 
-function buildContinuationPrompt(objective: string, todos: TodoItem[], maxItems: number): string {
-  const done = todos.filter((t) => t.status === "completed").length
-  const pending = todos.filter((t) => t.status === "pending" || t.status === "in_progress")
-  const lines = [
-    SENTINEL_CONTINUE,
-    "未完成任务仍在清单中，继续推进下一个待办项。",
-    "- 无需请示；完成并验证一项后立即标记 completed",
-    "- 清单全部完成才收尾；若认为已全部完成，先从怀疑角度逐项复核再更新清单",
-    `[progress: ${done}/${todos.length} completed, ${pending.length} remaining]`,
-  ]
-  for (const t of pending.slice(0, maxItems)) lines.push(`- [${t.status}] ${t.content}`)
-  if (pending.length > maxItems) lines.push(`…等 ${pending.length - maxItems} 项`)
-  if (objective.trim()) lines.push(`（目标：${objective.trim().slice(0, 60)}）`)
-  return lines.join("\n")
-}
-
-function buildNudgePrompt(): string {
-  return `${SENTINEL_CONTINUE}\n持续工作模式已激活但尚无任务清单——立即用 todowrite 创建清单并开始第一项。`
-}
-
-// ===================== 工具定义（名称与 JSON Schema，纯数据，setup 时注册；测试断言用） =====================
+// ===================== 工具定义 =====================
 
 export interface ToolDefLite {
   name: string
@@ -392,7 +554,7 @@ const TOOL_DEFS: ToolDefLite[] = [
   {
     name: "handoff",
     description:
-      "Hand off the current session to a fresh top-level session: creates a new session (same directory, NOT a child session) and injects the handoff summary. Pass `summary` with the full summary you authored per the 交接摘要模板 (from the /handoff or /ulw contract); without it a lean placeholder summary is used.",
+      "Hand off the current session to a fresh top-level session: creates a new session (same directory, NOT a child session) and injects the handoff summary. Pass `summary` with the full summary you authored per the 交接摘要模板 (from the /handoff or /ulw contract) — state INFORMATION only (what/where/results/gaps), never instructions, and make it complete enough that the next session never re-investigates what you already know; without it a lean placeholder summary is used.",
     input: {
       type: "object",
       properties: {
@@ -404,7 +566,7 @@ const TOOL_DEFS: ToolDefLite[] = [
   {
     name: "profile",
     description:
-      "Manage grit profiles. list = enumerate profiles; show = active profile details with hot/restart effect boundaries; switch = atomically activate a profile (writes the active pointer, re-materializes agents/*.md). Model/permission/prompt-variant changes require an OpenCode restart; behavior params/calibration/mechanism toggles take effect immediately.",
+      "Manage grit profiles. list = enumerate profiles; show = active profile details with effect boundaries; switch = atomically activate a profile (writes the active pointer and updates the OpenCode `agents` records in opencode.json). Under OpenCode V2 the config dir is watched (~3s), so model/permission changes take effect automatically (no restart). Behavior/mechanism toggles take effect immediately. The current session keeps its already-selected model.",
     input: {
       type: "object",
       properties: {
@@ -415,26 +577,105 @@ const TOOL_DEFS: ToolDefLite[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "ulw_enter",
+    description:
+      "Enter Continuous-Work (ULW) mode. Call this ONLY when the user asked for continuous work (they ran /ulw) — otherwise it is rejected. Pass `goal`: one line stating the task the user MOST RECENTLY asked for — locate it within the last few turns (it need NOT be the final message; chatter or follow-ups may come after it); NOT an older, broader goal. The discipline contract is injected into the session as a separate reminder message; this tool returns only a short confirmation. The mode lasts until you call ulw_exit.",
+    input: {
+      type: "object",
+      properties: { goal: { type: "string", description: "一句话目标（从会话上下文提炼）" } },
+      required: ["goal"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "ulw_exit",
+    description:
+      "Exit Continuous-Work (ULW) mode. Call this when the goal is genuinely complete (every acceptance criterion has real evidence) or when the user asks to stop. After exit the ULW discipline contract no longer applies.",
+    input: {
+      type: "object",
+      properties: { reason: { type: "string", description: "可选：退出原因（一句话）" } },
+      additionalProperties: false,
+    },
+  },
 ]
 
 // ===================== 插件（V2） =====================
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+// ===================== 跨实例共享状态（挂在 globalThis 上） =====================
+// OpenCode 会多次加载同一插件文件（每 agent / 每次 reload 各跑一次 setup）。实测：**模块级变量
+// 在同一文件被重复 import 时仍是每个模块实例一份**，去重因此失效（同毫秒 8 份 COUNTDOWN）。
+// 所以把共享状态挂到 globalThis（进程级，跨模块实例唯一）。
+interface GritShared {
+  stateCache: Map<string, { mtimeMs: number; s: UlwState }>
+  counters: Map<string, Counters>
+  countdownTimers: Map<string, ReturnType<typeof setTimeout>>
+  lastTokens: Map<string, TokenSnapshot>
+  /** 每会话最近一次请求的模型引用（用于查真实上下文窗口，见 limitFor）。 */
+  lastModels: Map<string, { providerID: string; modelID: string }>
+  /** 每会话最近一次「压缩后恢复」的时间戳（事件分发给每个插件实例，用它去重）。 */
+  lastCompacted: Map<string, number>
+  /** 正在处理 idle 的会话（防并发重入导致重复注入）。 */
+  inflight: Set<string>
+  /** 同进程插件 setup 次数（诊断用）。 */
+  setups: number
+  startedLogged: boolean
+}
+const GRIT_SHARED_KEY = "__grit_v3_shared__"
+const globalBag = globalThis as unknown as Record<string, GritShared | undefined>
+/**
+ * 取/建跨实例共享袋。**必须逐字段补默认值**：热重载时旧实例可能已经建好一个"缺新字段"的旧形状对象
+ * （模块级变量在重复 import 时各一份，见 DESIGN-v3 §0.2-6，所以只能挂 globalThis）；
+ * 若直接沿用旧对象，新代码写新字段就会抛（真实踩过：lastModels ⇒ 动态注入整段被 catch 吞掉）。
+ */
+const SHARED: GritShared = (() => {
+  const existing = globalBag[GRIT_SHARED_KEY]
+  if (existing) {
+    const b = existing as Partial<GritShared>
+    b.stateCache ??= new Map()
+    b.counters ??= new Map()
+    b.countdownTimers ??= new Map()
+    b.lastTokens ??= new Map()
+    b.lastModels ??= new Map()
+    b.lastCompacted ??= new Map()
+    b.inflight ??= new Set()
+    b.setups ??= 0
+    b.startedLogged ??= false
+    return existing
+  }
+  const fresh: GritShared = {
+    stateCache: new Map(),
+    counters: new Map(),
+    countdownTimers: new Map(),
+    lastTokens: new Map(),
+    lastModels: new Map(),
+    lastCompacted: new Map(),
+    inflight: new Set(),
+    setups: 0,
+    startedLogged: false,
+  }
+  globalBag[GRIT_SHARED_KEY] = fresh
+  return fresh
+})()
+
 const gritDefinition = Plugin.define({
   id: "grit",
   async setup(ctx: any) {
-    // ---- 数据根与日志（部署布局：~/.config/opencode/plugins/grit.ts，数据根 ../grit） ----
     const pluginDir = dirname(fileURLToPath(import.meta.url))
-    const home = process.env.GRIT_HOME ?? process.env.OMO_LITE_HOME ?? join(pluginDir, "..", "grit")
-    const agentsOutDir = process.env.GRIT_AGENTS_DIR ?? process.env.OMO_LITE_AGENTS_DIR ?? join(pluginDir, "..", "agents")
+    // 部署布局：~/.config/opencode/plugins/grit.ts → 数据根 ../grit
+    const home = process.env.GRIT_HOME ?? join(pluginDir, "..", "grit")
     const directory = ctx?.location?.directory ?? process.cwd()
+    const cfgDir = process.env.GRIT_CONFIG_DIR ?? join(home, "..")
+    const cfgPath = join(cfgDir, "opencode.json")
     const contractsDir = join(home, "contracts")
-    const calibrationDir = join(contractsDir, "calibration")
+    const disciplineDir = join(contractsDir, "discipline")
     const profilesDir = join(home, "profiles")
+    const agentsDir = join(home, "agents")
     const stateDir = join(home, "state")
     const logDir = join(home, "log")
-    const disabled = process.env.GRIT_DISABLE === "1" || process.env.OMO_LITE_DISABLE === "1"
+    const disabled = process.env.GRIT_DISABLE === "1"
 
     const log = (mech: string, msg: string): void => {
       try {
@@ -443,11 +684,29 @@ const gritDefinition = Plugin.define({
         try {
           if (statSync(lp).size > LOG_MAX_BYTES) writeFileSync(lp, "", "utf8")
         } catch { /* 不存在 */ }
-        const line = `${new Date().toISOString()} [${mech}] ${msg}\n`
-        writeFileSync(lp, line, { flag: "a", encoding: "utf8" })
+        writeFileSync(lp, `${new Date().toISOString()} [${mech}] ${msg}\n`, { flag: "a", encoding: "utf8" })
       } catch { /* 日志失败不影响主流程 */ }
     }
     mkdirSync(stateDir, { recursive: true })
+
+    // ---- 文本读取（现读现拼：改 contracts 文件即改纪律/契约，进程无需重启） ----
+    const readText = (p: string): string | null => {
+      try {
+        return existsSync(p) ? readFileSync(p, "utf8") : null
+      } catch {
+        return null
+      }
+    }
+    const variantsDir = join(home, "variants")
+    const readDiscipline = (name: string): string | null => {
+      const variantsMap = (getActiveProfile()?.profile.promptVariants ?? {}) as Record<string, string>
+      const vn = typeof variantsMap[name] === "string" ? (variantsMap[name] as string) : ""
+      const shared = readText(join(disciplineDir, "_shared.md")) ?? ""
+      const own = readText(join(disciplineDir, `${name}.md`))
+      if (own === null) return null
+      const variant = vn ? readText(join(variantsDir, vn, "discipline", `${name}.md`)) ?? "" : ""
+      return [shared.trim(), own.trim(), variant.trim()].filter(Boolean).join("\n\n")
+    }
 
     // ---- profile 3s TTL 热读 ----
     let profileCache: { at: number; data: ReturnType<typeof loadActiveProfile> } | null = null
@@ -470,7 +729,7 @@ const gritDefinition = Plugin.define({
     }
     const getContConfig = (): ContinuationConfig => {
       const ap = getActiveProfile()
-      const tc = ((ap?.profile.features ?? {}) as Record<string, Record<string, unknown>>).todoContinuation ?? {}
+      const tc = ((ap?.profile.features ?? {}) as Record<string, Record<string, unknown>>).continuation ?? {}
       const num = (k: keyof ContinuationConfig): number => {
         const v = tc[k]
         return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : DEFAULT_CONTINUATION[k]
@@ -480,50 +739,58 @@ const gritDefinition = Plugin.define({
         backoffPowCap: num("backoffPowCap"), maxConsecutiveFailures: num("maxConsecutiveFailures"),
         failureResetWindowMs: num("failureResetWindowMs"), maxStagnation: num("maxStagnation"),
         abortWindowMs: num("abortWindowMs"), contextSkipPct: num("contextSkipPct"),
-        maxTotalInjections: num("maxTotalInjections"), todoListMaxItems: num("todoListMaxItems"),
+        maxTotalInjections: num("maxTotalInjections"), toolLoopWarn: num("toolLoopWarn"), toolLoopStop: num("toolLoopStop"),
       }
     }
     const contEnabled = (): boolean => {
       if (disabled) return false
-      const tc = ((getActiveProfile()?.profile.features ?? {}) as Record<string, Record<string, unknown>>).todoContinuation ?? {}
+      const tc = ((getActiveProfile()?.profile.features ?? {}) as Record<string, Record<string, unknown>>).continuation ?? {}
       return tc.enabled !== false
     }
 
-    // ---- state IO ----
-    const stateCache = new Map<string, UlwState>()
+    // ---- state IO（缓存跨实例共享 + 按 mtime 感知磁盘变化，见 SHARED） ----
+    const stateCache = SHARED.stateCache
     const statePath = (sid: string): string => join(stateDir, `${sid}.json`)
     const loadState = (sid: string): UlwState | null => {
-      const cached = stateCache.get(sid)
-      if (cached) return cached
       const p = statePath(sid)
-      if (!existsSync(p)) return null
+      let mtimeMs: number
+      try {
+        mtimeMs = statSync(p).mtimeMs
+      } catch {
+        return null
+      }
+      const cached = stateCache.get(sid)
+      if (cached && cached.mtimeMs === mtimeMs) return cached.s
       try {
         const s = JSON.parse(readFileSync(p, "utf8")) as UlwState
-        if (s.schemaVersion !== 1) return null
-        stateCache.set(sid, s)
+        if (s.schemaVersion !== 2) return null
+        stateCache.set(sid, { mtimeMs, s })
         return s
       } catch {
         return null
       }
     }
     const saveState = (s: UlwState): void => {
-      stateCache.set(s.sessionID, s)
       try {
         const p = statePath(s.sessionID)
         const tmp = `${p}.tmp`
         writeFileSync(tmp, JSON.stringify(s, null, 2), "utf8")
-        try { unlinkSync(p) } catch { /* 首次不存在 */ }
+        try { unlinkSync(p) } catch { /* 首次 */ }
         renameSync(tmp, p)
+        try {
+          stateCache.set(s.sessionID, { mtimeMs: statSync(p).mtimeMs, s })
+        } catch {
+          stateCache.delete(s.sessionID)
+        }
       } catch (e) {
         log("a", `state 写盘失败 s=${s.sessionID.slice(0, 8)} err=${e instanceof Error ? e.message : String(e)}`)
       }
     }
     const newState = (sid: string, dir: string): UlwState => ({
-      schemaVersion: 1, sessionID: sid, directory: dir, active: true, objective: "",
+      schemaVersion: 2, sessionID: sid, directory: dir, active: true, objective: "",
       epoch: 1, activatedAt: Date.now(), contractFingerprint: null,
-      stopReason: null, pauseReason: null, totalInjections: 0, missingTodoNudgeUsed: false,
+      stopReason: null, pauseReason: null, totalInjections: 0, exitNoticePending: false,
     })
-    // state TTL 清扫（启动一次）
     try {
       const now = Date.now()
       for (const f of readdirSync(stateDir)) {
@@ -533,61 +800,60 @@ const gritDefinition = Plugin.define({
       }
     } catch { /* 目录不存在等 */ }
 
-    // ---- 续跑计数器（内存，重载归零=安全侧） ----
-    const counters = new Map<string, Counters>()
+    // ---- 续跑计数器（内存，重载归零=安全侧；跨实例共享） ----
+    const counters = SHARED.counters
     const getCtr = (sid: string): Counters => {
       let c = counters.get(sid)
       if (!c) {
-        c = { lastInjectedAt: 0, consecutiveFailures: 0, stagnationCount: 0, awaitingProgress: false, responseObserved: false, abortAt: null, lastTodo: null }
+        c = { lastInjectedAt: 0, consecutiveFailures: 0, stagnationCount: 0, awaitingProgress: false, fingerprint: null, abortAt: null }
         counters.set(sid, c)
       }
       return c
     }
-    const countdownTimers = new Map<string, ReturnType<typeof setTimeout>>()
+    const countdownTimers = SHARED.countdownTimers
 
-    // ---- token 快照（机制 D） + 当前会话追踪 ----
-    const lastTokens = new Map<string, TokenSnapshot>()
+    // ---- token 快照（机制 D；跨实例共享） ----
+    const lastTokens = SHARED.lastTokens
     let currentSession: string | null = null
 
-    // ---- 契约读取与拼装 ----
-    const readText = (p: string): string | null => {
+    // ---- 模型真实上下文窗口（懒查一次并缓存 5min；查不到回退 DEFAULT_CONTEXT_LIMIT） ----
+    // 原先写死 1M：对 128K/256K 窗口的模型会把占用率算低几倍，85% 上限门几乎永不触发。
+    let limitCache: { at: number; byKey: Map<string, number> } | null = null
+    const limitFor = async (sid: string): Promise<number> => {
+      const ref = SHARED.lastModels.get(sid)
+      if (!ref || !ref.providerID || !ref.modelID) return DEFAULT_CONTEXT_LIMIT
       try {
-        return existsSync(p) ? readFileSync(p, "utf8") : null
-      } catch {
-        return null
+        if (!limitCache || Date.now() - limitCache.at > 300_000) {
+          const raw = (await ctx.model?.list?.()) as unknown
+          const list = Array.isArray(raw) ? raw : ((raw as { data?: unknown } | null)?.data ?? [])
+          const byKey = new Map<string, number>()
+          for (const info of Array.isArray(list) ? list : []) {
+            const i = info as { providerID?: unknown; modelID?: unknown; limit?: { context?: unknown } }
+            const c = i?.limit?.context
+            if (typeof i?.providerID === "string" && typeof i?.modelID === "string" && typeof c === "number" && c > 0) {
+              byKey.set(`${i.providerID}/${i.modelID}`, c)
+            }
+          }
+          limitCache = { at: Date.now(), byKey }
+        }
+        const v = limitCache.byKey.get(`${ref.providerID}/${ref.modelID}`)
+        if (v !== undefined && v > 0) return v
+      } catch (e) {
+        log("b", `model limit 查询失败：${e instanceof Error ? e.message : String(e)}`)
       }
+      return DEFAULT_CONTEXT_LIMIT
     }
+
+    // ---- 契约 ----
     const buildContract = (): { text: string; fingerprint: string } | { error: string } => {
       const ulw = readText(join(contractsDir, "ulw.md"))
       if (ulw === null) return { error: "contracts/ulw.md 缺失" }
-      const calName = getActiveProfile()?.profile.calibration
-      const cal = (typeof calName === "string" ? readText(join(calibrationDir, `${calName}.md`)) : null)
-        ?? readText(join(calibrationDir, "default.md"))
-      if (cal === null) return { error: `contracts/calibration/${String(calName ?? "default")}.md 缺失` }
       const ht = readText(join(contractsDir, "handoff-template.md")) ?? ""
-      const text = assembleContract(ulw, cal, ht)
+      const text = assembleContract(ulw, ht)
       return { text, fingerprint: `sha1:${createHash("sha1").update(text).digest("hex").slice(0, 12)}` }
     }
 
-    // ---- todo 读取（V2 无 todo 事件：idle 时从会话上下文扫最新 todowrite 工具调用） ----
-    const fetchTodos = async (sid: string): Promise<TodoItem[]> => {
-      try {
-        const res = await ctx.session.context({ sessionID: sid })
-        const arr: any[] = Array.isArray(res) ? (res as any[]) : (((res as any)?.data as any[]) ?? [])
-        for (let i = arr.length - 1; i >= 0; i--) {
-          const m = arr[i] as any
-          if (m?.type !== "tool" || m?.name !== "todowrite") continue
-          const input = m?.state?.input ?? m?.input
-          const todos = Array.isArray(input) ? input : (input?.todos ?? [])
-          if (Array.isArray(todos)) return todos as TodoItem[]
-        }
-      } catch (e) {
-        log("b", `todos 读取失败 s=${sid.slice(0, 8)} err=${e instanceof Error ? e.message : String(e)}`)
-      }
-      return []
-    }
-
-    // ---- 续跑注入执行 ----
+    // ---- 续跑注入 ----
     const cancelCountdown = (sid: string): void => {
       const t = countdownTimers.get(sid)
       if (t !== undefined) {
@@ -595,109 +861,245 @@ const gritDefinition = Plugin.define({
         countdownTimers.delete(sid)
       }
     }
-    const doInject = async (sid: string, text: string, state: UlwState, ctr: Counters): Promise<void> => {
+    const doInject = async (sid: string): Promise<void> => {
+      // 注入前复核新鲜状态：已退出/已停则不发、不写（防陈旧快照把 active:true 复活）
+      const st = loadState(sid)
+      if (!st || !st.active || st.stopReason !== null) {
+        log("b", `INJECT-SKIP s=${sid.slice(0, 8)} reason=not-active`)
+        return
+      }
       try {
-        await ctx.session.prompt({ sessionID: sid, text })
+        // 独立带标签块（不拼进用户原文）：作为一条独立 prompt 注入并唤醒会话。
+        await ctx.session.prompt({ sessionID: sid, text: continuationBlock(st.objective) })
+        const ctr = getCtr(sid)
         ctr.lastInjectedAt = Date.now()
         ctr.awaitingProgress = true
-        ctr.responseObserved = false
         ctr.consecutiveFailures = 0
-        if (state.pauseReason === "directive-response") state.pauseReason = null
-        state.totalInjections += 1
-        saveState(state)
-        log("b", `INJECT s=${sid.slice(0, 8)} epoch=${state.epoch} total=${state.totalInjections}`)
+        // 写回用新鲜状态，且仅在仍激活时计数
+        const after = loadState(sid)
+        if (after && after.active && after.stopReason === null) {
+          after.totalInjections += 1
+          saveState(after)
+          log("b", `INJECT s=${sid.slice(0, 8)} epoch=${after.epoch} total=${after.totalInjections}`)
+        } else {
+          log("b", `INJECT-EXITED s=${sid.slice(0, 8)}（注入后已退出，不回写 active）`)
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
+        const ctr = getCtr(sid)
         ctr.consecutiveFailures += 1
         ctr.lastInjectedAt = Date.now()
         log("b", `INJECT-FAIL s=${sid.slice(0, 8)} err=${msg}`)
         if (/token|context|overflow|too large/i.test(msg)) {
-          state.stopReason = "context-overflow"
-          state.active = false
-          saveState(state)
+          const fresh = loadState(sid)
+          if (fresh && fresh.active) saveState({ ...fresh, stopReason: "context-overflow", active: false })
         }
       }
     }
     const handleIdle = async (sid: string): Promise<void> => {
       if (!contEnabled()) return
-      const state = loadState(sid)
-      if (!state) return
-      const ctr = getCtr(sid)
-      const cfg = getContConfig()
-      const todos = await fetchTodos(sid)
-      const toks = lastTokens.get(sid)
-      const occupancy = toks ? contextOccupancy(toks, DEFAULT_CONTEXT_LIMIT) : null
-      const r = decideContinuation(state, ctr, cfg, todos, occupancy, Date.now())
-      counters.set(sid, r.counters)
-      const stateChanged = JSON.stringify(r.state) !== JSON.stringify(state)
-      if (stateChanged) saveState(r.state)
-      if (r.kind === "skip") {
-        log("b", `SKIP s=${sid.slice(0, 8)} reason=${r.reason ?? ""}`)
-        return
+      // 去重：并发重入 或 已有倒计时在等 → 跳过（防重复注入）
+      if (SHARED.inflight.has(sid)) { log("b", `SKIP s=${sid.slice(0, 8)} reason=inflight`); return }
+      if (countdownTimers.has(sid)) { log("b", `SKIP s=${sid.slice(0, 8)} reason=countdown-pending`); return }
+      SHARED.inflight.add(sid)
+      try {
+        const state = loadState(sid)
+        if (!state) return
+        const ctr = getCtr(sid)
+        const cfg = getContConfig()
+        let msgs: unknown[] = []
+        try {
+          const res = await ctx.session.context({ sessionID: sid })
+          msgs = Array.isArray(res) ? res : ((res as any)?.data ?? [])
+        } catch (e) {
+          log("b", `context 读取失败 s=${sid.slice(0, 8)} err=${e instanceof Error ? e.message : String(e)}`)
+        }
+        const toks = lastTokens.get(sid)
+        const occupancy = toks ? contextOccupancy(toks, await limitFor(sid)) : null
+        const input: ContinueInput = {
+          occupancy,
+          fingerprint: responseFingerprint(msgs),
+          maxToolRepeat: maxToolRepeat(msgs),
+        }
+        const r = decideContinuation(state, ctr, cfg, input, Date.now())
+        counters.set(sid, r.counters)
+        const stateChanged = JSON.stringify(r.state) !== JSON.stringify(state)
+        if (stateChanged) saveState(r.state)
+        if (r.kind === "skip") { log("b", `SKIP s=${sid.slice(0, 8)} reason=${r.reason ?? ""}`); return }
+        if (r.kind === "stop") { log("b", `STOP s=${sid.slice(0, 8)} reason=${r.reason ?? ""}`); return }
+        if (r.kind === "pause") { log("b", `PAUSE s=${sid.slice(0, 8)} reason=${r.reason ?? ""}`); return }
+        cancelCountdown(sid)
+        const ms = Math.max(0, cfg.countdownSeconds) * 1000
+        const timer = setTimeout(() => {
+          countdownTimers.delete(sid)
+          void doInject(sid)
+        }, ms)
+        countdownTimers.set(sid, timer)
+        log("b", `COUNTDOWN s=${sid.slice(0, 8)} ms=${ms} toolRepeat=${input.maxToolRepeat}`)
+      } finally {
+        SHARED.inflight.delete(sid)
       }
-      if (r.kind === "stop") {
-        log("b", `STOP s=${sid.slice(0, 8)} reason=${r.reason ?? ""}`)
-        return
-      }
-      if (r.kind === "pause") {
-        log("b", `PAUSE s=${sid.slice(0, 8)} reason=${r.reason ?? ""}`)
-        return
-      }
-      cancelCountdown(sid)
-      const ms = Math.max(0, cfg.countdownSeconds) * 1000
-      const timer = setTimeout(() => {
-        countdownTimers.delete(sid)
-        if (r.kind === "nudge") void doInject(sid, buildNudgePrompt(), r.state, r.counters)
-        else if (r.kind === "countdown" && r.todos) void doInject(sid, buildContinuationPrompt(r.state.objective, todos, cfg.todoListMaxItems), r.state, r.counters)
-      }, ms)
-      countdownTimers.set(sid, timer)
-      log("b", `COUNTDOWN s=${sid.slice(0, 8)} ms=${ms} kind=${r.kind}`)
     }
 
-    // ---- 哨兵处理（机制 A，V1 chat.message → V2 prompt 钩子） ----
-    const handleUlwActivate = (sid: string, dir: string, text: string): string | null => {
-      if (!featEnabled("contractInjector")) return null
-      const m = text.match(/^目标：(.*)$/m)
-      const objective = (m?.[1] ?? "").trim()
+    // ---- 取"上一条用户消息"文本（ulw_enter 的授权校验依据） ----
+    const lastUserText = async (sid: string): Promise<string> => {
+      try {
+        const res = await ctx.session.context({ sessionID: sid })
+        const msgs: unknown[] = Array.isArray(res) ? res : ((res as any)?.data ?? [])
+        return lastUserTextOf(msgs)
+      } catch (e) {
+        log("b", `lastUserText 读取失败 s=${sid.slice(0, 8)} err=${e instanceof Error ? e.message : String(e)}`)
+        return ""
+      }
+    }
+
+    /** 模型调用 ulw_enter：仅当「上一条用户消息」含授权标识 ULW_AUTH_TOKEN（即用户执行过 /ulw），
+     *  或本会话已在 ULW 中（允许更新目标）时生效；无授权标识则拒绝并告知模型。 */
+    const enterUlw = async (sid: string, dir: string, goal: string): Promise<string> => {
+      if (!featEnabled("contractInjector")) return "ULW 机制已关闭（profile.features.contractInjector=false 或 GRIT_DISABLE=1）。"
       const existing = loadState(sid)
-      const state = existing && existing.active
-        ? { ...existing, epoch: existing.epoch + 1, activatedAt: Date.now(), stopReason: null, pauseReason: null, totalInjections: 0, missingTodoNudgeUsed: false, objective }
-        : existing
-          ? { ...existing, active: true, epoch: existing.epoch + 1, activatedAt: Date.now(), stopReason: null, pauseReason: null, totalInjections: 0, missingTodoNudgeUsed: false, objective }
-          : newState(sid, dir)
-      state.objective = objective
+      if (!existing?.active) {
+        const lu = await lastUserText(sid)
+        if (!lu.includes(ULW_AUTH_TOKEN)) {
+          log("a", `ENTER-REJECT s=${sid.slice(0, 8)}（上一条用户消息无授权标识）`)
+          return `未进入 ULW：上一条用户消息不含授权标识。仅当用户执行过 /ulw（其命令文本含 ${ULW_AUTH_TOKEN}）时才应调用本工具；否则不要进入持续工作模式。`
+        }
+      }
+      const state: UlwState = {
+        ...(existing ?? newState(sid, dir)),
+        active: true, objective: goal.trim().slice(0, 200),
+        epoch: (existing?.epoch ?? 0) + 1, activatedAt: Date.now(),
+        stopReason: null, pauseReason: null, totalInjections: 0,
+      }
       const bc = buildContract()
       if ("error" in bc) {
-        log("a", `CONTRACT-MISSING s=${sid.slice(0, 8)} err=${bc.error}`)
         saveState(state)
-        return `[grit] 契约文件缺失：${bc.error}。已记录 ULW 激活但无契约注入。`
+        log("a", `CONTRACT-MISSING s=${sid.slice(0, 8)} err=${bc.error}`)
+        return `已进入 ULW，但契约文件缺失：${bc.error}（无契约注入）。`
       }
       state.contractFingerprint = bc.fingerprint
       saveState(state)
-      const ctr = getCtr(sid)
-      counters.set(sid, { ...ctr, consecutiveFailures: 0, stagnationCount: 0, awaitingProgress: false, responseObserved: false })
-      log("a", `ACTIVATE s=${sid.slice(0, 8)} epoch=${state.epoch} fp=${bc.fingerprint}`)
-      return bc.text
+      counters.set(sid, {
+        ...getCtr(sid),
+        consecutiveFailures: 0, stagnationCount: 0, awaitingProgress: false,
+        // 契约注入本身就是一次"启动"：记下时间，避免紧接着又被续跑门推一把（冷却 5s）
+        lastInjectedAt: Date.now(),
+      })
+      log("a", `ENTER s=${sid.slice(0, 8)} epoch=${state.epoch} fp=${bc.fingerprint} goal=${state.objective.slice(0, 30)}`)
+      // 契约走「真消息」：ctx.session.prompt 会把这条文本落库（UI 上就是一条用户消息），
+      // 下一轮及以后的请求一定能看到；工具结果只在当轮可见，压缩后就会丢。
+      try {
+        await ctx.session.prompt({ sessionID: sid, text: contractNotice(bc.text, state.objective) })
+        log("a", `ENTER-INJECT s=${sid.slice(0, 8)} chars=${bc.text.length}`)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        log("a", `ENTER-INJECT-FAIL s=${sid.slice(0, 8)} err=${msg}`)
+        // 注入失败是异常路径：把契约退回工具结果，至少本模式仍能生效（并如实说明）
+        return [
+          `已进入 ULW（目标：${state.objective || "（未指定）"}），但契约作为消息注入失败：${msg}`,
+          "以下契约全文改由本条工具结果提供：",
+          "",
+          bc.text,
+        ].join("\n")
+      }
+      return `已进入持续工作模式（ULW）。目标：${state.objective || "（未指定）"}。契约已作为一条提醒消息注入本会话，按它执行；完成时调用 ulw_exit 退出。`
     }
 
-    // ---- 启动自检（V1 config 钩子 → setup 内直接执行，仅记日志不改配置） ----
+    /** 退出 ULW（模型调用 ulw_exit 或用户 /ulw-exit）。两条路径共用这一个函数：
+     *  账本置停 + 留一个「待贴退出提醒」标记；具体提醒由下一次请求组装统一贴一次（见 context 钩子）。 */
+    const exitUlw = (sid: string, reason: string): string => {
+      const st = loadState(sid)
+      cancelCountdown(sid)
+      if (!st || !st.active) {
+        log("a", `EXIT-NOOP s=${sid.slice(0, 8)} reason=${reason || "model"}`)
+        return "当前不在 ULW 模式。"
+      }
+      saveState({ ...st, active: false, stopReason: "completed", pauseReason: null, exitNoticePending: true })
+      log("a", `EXIT s=${sid.slice(0, 8)} reason=${reason || "model"}`)
+      return "ULW 已退出：纪律契约自此不再生效。"
+    }
+
+    // ---- 启动自检 ----
     if (disabled) {
       log("c", "GRIT_DISABLE=1：机制全关，仅工具可用")
     } else {
       const ap = getActiveProfile()
       if (!ap) log("c", "WARN 无激活 profile（profiles/active 缺失）——机制按默认开")
-      const ulw = readText(join(contractsDir, "ulw.md"))
-      if (ulw === null) log("c", "WARN contracts/ulw.md 缺失——/ulw 将降级")
-      const cal = ap?.profile.calibration
-      if (typeof cal === "string" && readText(join(calibrationDir, `${cal}.md`)) === null) {
-        log("c", `WARN 校准段缺失 calibration=${cal}`)
-      }
-      const markerFile = join(agentsOutDir, "build.md")
-      const mt = readText(markerFile)
-      if (mt !== null && !mt.includes("grit:materialized")) log("c", "WARN agents/build.md 无物化标记——跑 node scripts/materialize.mjs 并重启")
+      if (readText(join(contractsDir, "ulw.md")) === null) log("c", "WARN contracts/ulw.md 缺失——/ulw 将降级")
+      const idx = readAgentsIndex(join(agentsDir, "index.json"))
+      if (Object.keys(idx).length === 0) log("c", "WARN agents/index.json 缺失——profile 切换将不物化 agents 记录")
     }
 
-    // ---- V1 chat.message → V2 prompt 钩子（哨兵 A + 用户打断判定） ----
+    // ---- 配置读写（profile switch 写 agents 记录） ----
+    /** 严格读 opencode.json：文件不存在 → 空对象（首次安装）；存在但解析失败（例如带注释/JSONC）
+     *  → 返回错误，调用方必须中止，绝不把用户配置覆盖成"只剩 agents"的样子。 */
+    const readConfigStrict = (): { ok: true; cfg: Record<string, any> } | { ok: false; error: string } => {
+      let raw: string
+      try {
+        raw = readFileSync(cfgPath, "utf8")
+      } catch {
+        return { ok: true, cfg: {} }
+      }
+      try {
+        return { ok: true, cfg: JSON.parse(raw) as Record<string, any> }
+      } catch (e) {
+        return { ok: false, error: `opencode.json 解析失败（可能有注释/JSONC）：${e instanceof Error ? e.message : String(e)}` }
+      }
+    }
+    const writeAgentsRecords = (name: string): { ok: boolean; message: string } => {
+      const index = readAgentsIndex(join(agentsDir, "index.json"))
+      if (Object.keys(index).length === 0) return { ok: false, message: "agents/index.json 缺失" }
+      const loaded = loadProfileByName(profilesDir, name)
+      if (!loaded) return { ok: false, message: `profile 不存在：${name}` }
+      const defaultPath = join(profilesDir, "default.json")
+      const defaultProfile = existsSync(defaultPath) ? (JSON.parse(readFileSync(defaultPath, "utf8")) as Record<string, unknown>) : {}
+      const { records, warnings } = buildAgentRecords({ index, profile: loaded.profile, defaultProfile })
+      // 1) 严格读原文件：带注释/坏 JSON 一律中止（这一条是防数据损失的关键）
+      const rc = readConfigStrict()
+      if (!rc.ok) return { ok: false, message: `${rc.error}——已中止，未改动文件` }
+      const cfg = rc.cfg
+      const owned = [...Object.keys(records), ...REMOVED_AGENT_NAMES]
+      for (const n of owned) if (cfg.agents && typeof cfg.agents === "object") delete cfg.agents[n]
+      cfg.agents = { ...(cfg.agents ?? {}), ...records }
+      // 2) 改前备份（单槽覆盖，留最近一次切换前的样子）
+      const bakPath = `${cfgPath}.bak-switch`
+      let backup: string | null = null
+      try {
+        backup = readFileSync(cfgPath, "utf8")
+        writeFileSync(bakPath, backup, "utf8")
+      } catch { backup = null }
+      // 3) 原子写
+      try {
+        const tmp = `${cfgPath}.tmp`
+        writeFileSync(tmp, `${JSON.stringify(cfg, null, 2)}\n`, "utf8")
+        try { unlinkSync(cfgPath) } catch { /* 首次 */ }
+        renameSync(tmp, cfgPath)
+      } catch (e) {
+        return { ok: false, message: `写 opencode.json 失败：${e instanceof Error ? e.message : String(e)}` }
+      }
+      // 4) 写后校验：能解析 且 每条记录的 model 与档一致；不通过就还原 + 报错
+      try {
+        const after = JSON.parse(readFileSync(cfgPath, "utf8")) as Record<string, any>
+        const bad = Object.keys(records).filter((n) => {
+          const got = after?.agents?.[n]
+          return !got || got.model !== records[n]?.model
+        })
+        if (bad.length > 0) throw new Error(`缺记录或 model 不符：${bad.join(", ")}`)
+      } catch (e) {
+        let restored = false
+        if (backup !== null) {
+          try {
+            writeFileSync(cfgPath, backup, "utf8")
+            restored = true
+            log("c", `SWITCH-VERIFY-FAIL 已从备份还原 ${bakPath}`)
+          } catch { /* 还原也失败 */ }
+        }
+        return { ok: false, message: `写后校验失败：${e instanceof Error ? e.message : String(e)}（${restored ? "已从备份还原" : "无备份可还原"}）` }
+      }
+      return { ok: true, message: `${Object.keys(records).length} 条 agents 记录${warnings.length ? `（告警 ${warnings.length}）` : ""}` }
+    }
+
+    // ---- prompt 钩子（哨兵 A + 打断判定） ----
     await ctx.session.hook("prompt", (event: any) => {
       try {
         const sid = event.sessionID as string
@@ -705,24 +1107,16 @@ const gritDefinition = Plugin.define({
         const text = typeof event.prompt?.text === "string" ? (event.prompt.text as string) : ""
         if (text === "") return
         const sentinel = matchSentinel(text)
-        if (sentinel === SENTINEL_ULW) {
-          const appended = handleUlwActivate(sid, directory, text)
-          if (appended !== null) event.prompt.text = `${text}\n\n${appended}`
+        if (sentinel === SENTINEL_EXIT) {
+          exitUlw(sid, "user")
           return
         }
-        if (sentinel === SENTINEL_STOP) {
-          const st = loadState(sid)
-          if (st) {
-            saveState({ ...st, active: false, stopReason: "manual", pauseReason: null })
-            log("a", `STOP-CMD s=${sid.slice(0, 8)}`)
-          }
-          cancelCountdown(sid)
-          return
-        }
-        if (sentinel !== null) return // 自己的注入物（续跑提示回环）——防回声
-        // 真实用户消息：打断判定（仅 ULW 活跃会话）
+        if (sentinel === SENTINEL_CONTINUE) return // 自己的续跑提示（防回声）
+        // 插件自己注入的契约（进入 / 压缩后恢复）也是一条真消息：既不是用户插话、也不是退出暗号。
+        if (isPluginInjectedText(text)) return
         const st = loadState(sid)
-        if (st && st.active && st.stopReason === null) {
+        if (!st) return
+        if (st.active && st.stopReason === null) {
           cancelCountdown(sid)
           if (st.pauseReason !== "user-interruption") {
             saveState({ ...st, pauseReason: "user-interruption" })
@@ -734,72 +1128,77 @@ const gritDefinition = Plugin.define({
       }
     })
 
-    // ---- V1 experimental.chat.messages.transform + chat.params → V2 context 钩子 ----
+    // ---- context 钩子 ----
+    // 注入分两条通道：
+    //   · 稳定内容（角色纪律，不随会话变化）→ 系统提示词（同内容同位置 ⇒ 不影响前缀缓存）
+    //   · 会话中触发的动态内容（激活标记 / 授权与退出提醒 / 压缩后契约恢复）→ 消息通道的带标签块（只追加尾部）
+    const sysHas = (sys: any[], needle: string): boolean =>
+      Array.isArray(sys) && sys.some((p) => typeof p?.text === "string" && p.text.includes(needle))
+
     await ctx.session.hook("context", (event: any) => {
-      // 机制 C：profile 热参数（V1 chat.params 语义）
+      const agent = String(event.agent ?? "")
+      // 角色纪律（稳定）→ 系统提示词
       try {
-        if (!disabled && featEnabled("profileEngine")) {
-          const params = (getActiveProfile()?.profile.params ?? {}) as Record<string, unknown>
-          if (params.apply === true) {
-            if (typeof params.temperature === "number") event.options.temperature = params.temperature
-            if (typeof params.topP === "number") event.options.topP = params.topP
-            if (typeof params.variant === "string" && params.variant !== "") event.options.variant = params.variant
+        const sys = event.system
+        if (Array.isArray(sys) && AGENT_NAMES.includes(agent)) {
+          const tag = `[GRIT:DISCIPLINE:${agent}]`
+          if (!sysHas(sys, tag)) {
+            const content = readDiscipline(agent)
+            if (content) sys.push({ type: "text", text: disciplineBlock(agent, content) })
           }
         }
       } catch (e) {
-        log("c", `params 失败开放：${e instanceof Error ? e.message : String(e)}`)
+        log("a", `纪律段注入失败开放：${e instanceof Error ? e.message : String(e)}`)
       }
-      // 机制 A：契约恢复 + 每轮标记（V1 messages.transform 语义；V2 消息为扁平 {type,text}）
+      // 动态注入（会话中触发）→ 消息通道
       try {
-        if (!featEnabled("contractInjector")) return
-        const msgs = event.messages as Array<Record<string, unknown>> | undefined
-        if (!Array.isArray(msgs) || msgs.length === 0) return
-        const sid = event.sessionID as string
+        const msgs = event.messages as any[] | undefined
+        if (!Array.isArray(msgs)) return
+        // 只认真实 agent 回合：标题/压缩/generate 这类辅助请求不带 agent（见 v2 SessionTitle/SessionCompaction），
+        // 给它们塞注入只会污染压缩输入与标题提示词。
+        if (!AGENT_NAMES.includes(agent)) return
+        const sid = String(event.sessionID ?? "")
+        const mref = event.model as { providerID?: unknown; id?: unknown } | undefined
+        if (mref && typeof mref.providerID === "string" && typeof mref.id === "string") {
+          SHARED.lastModels.set(sid, { providerID: mref.providerID, modelID: mref.id })
+        }
         const st = loadState(sid)
-        if (!st || !st.active || st.stopReason !== null || st.pauseReason !== null) return
-        const textOf = (m: unknown): string | null => {
-          const t = (m as { text?: unknown } | null)?.text
-          return typeof t === "string" ? t : null
-        }
-        // 压缩恢复探测：持久消息中既无契约首哨兵也无尾哨兵
-        let contractPresent = false
-        for (const m of msgs) {
-          const t = textOf(m)
-          if (t !== null && (t.includes(SENTINEL_CONTRACT_OPEN) || t.includes(SENTINEL_CONTRACT_CLOSE))) {
-            contractPresent = true
-            break
+        const lu = lastUserTextOf(msgs)
+        if (st && st.active && st.stopReason === null) {
+          // 契约已在进入 / 压缩恢复时作为一条真消息注入（落库、历史里查得到），这里只贴每轮一行标记。
+          if (!messagesContain(msgs, MARKER_TAG)) appendInject(msgs, markerLine(st.objective))
+          // 兜底（正常路径走不到）：压缩事件没赶上、session.revert 回退、收件箱取消 → 历史里契约没了。
+          // 只追加到本轮请求（不落库），所以加 60 秒节流，避免判据看不见契约时每轮重贴。
+          if (!contractInHistory(msgs)) {
+            const ctr = getCtr(sid)
+            const now = Date.now()
+            if (now - (ctr.contractRestoreAt ?? 0) > 60_000) {
+              const bc = buildContract()
+              if ("text" in bc) {
+                appendInject(msgs, `<system-reminder>\n${bc.text}\n</system-reminder>`)
+                ctr.contractRestoreAt = now
+                log("a", `RESTORE-FALLBACK s=${sid.slice(0, 8)}`)
+              }
+            }
           }
-        }
-        if (!contractPresent) {
-          const bc = buildContract()
-          if ("text" in bc) {
-            const at = Math.min(1, msgs.length)
-            msgs.splice(at, 0, {
-              type: "user",
-              id: `msg_grit_contract_${Date.now()}`,
-              text: bc.text,
-              time: { created: Date.now() },
-            })
-            log("a", `RESTORE s=${sid.slice(0, 8)} at=${at}`)
+        } else {
+          // 「已退出」提醒由账本状态驱动：退出后第一次组装贴一次，随后清标记。
+          // 不再依赖用户消息里是否还有 [GRIT:ULW:EXIT]（命令正文可能被折叠/改写，暗号不可靠）。
+          if (st && st.stopReason !== null && st.exitNoticePending) {
+            if (!messagesContain(msgs, EXITED_TAG)) appendInject(msgs, exitNoticeBlock())
+            saveState({ ...st, exitNoticePending: false })
+            log("a", `EXITED-NOTICE s=${sid.slice(0, 8)}`)
           }
-          return
-        }
-        // 每轮一行标记：追加到最后一条 user 消息
-        for (let i = msgs.length - 1; i >= 0; i--) {
-          const m = msgs[i] as { type?: unknown; text?: unknown }
-          if (m?.type !== "user") continue
-          const t = textOf(m)
-          const line = markerLine(st.objective)
-          if (t === null) msgs[i] = { ...m, text: line }
-          else if (!t.includes(MARKER_TAG)) msgs[i] = { ...m, text: `${t}\n${line}` }
-          return
+          if (lu.includes(ULW_AUTH_TOKEN) && !messagesContain(msgs, ARMED_TAG)) {
+            appendInject(msgs, `<system-reminder>${ARMED_TAG} 用户已请求持续工作模式：请立即调用 ulw_enter 工具进入，传入「用户最近一次提出的任务」作为目标（在最近几轮里定位，未必是最后一条消息；不要取更早的、更大范围的全局目标）。工具会把纪律契约作为一条提醒消息注入本会话，按其执行；完成时调用 ulw_exit 退出。</system-reminder>`)
+          }
         }
       } catch (e) {
-        log("a", `transform 失败开放：${e instanceof Error ? e.message : String(e)}`)
+        log("a", `动态注入失败开放：${e instanceof Error ? e.message : String(e)}`)
       }
     })
 
-    // ---- 5 工具注册（V1 tool map → V2 tool transform；JSON Schema；返回 {content}） ----
+    // ---- 5 工具注册 ----
     await ctx.tool.transform((editor: any) => {
       for (const def of TOOL_DEFS) {
         editor.add({
@@ -812,7 +1211,7 @@ const gritDefinition = Plugin.define({
               case "context_usage": {
                 const tokens = lastTokens.get(sid)
                 if (!tokens) return { content: "（暂无 token 快照——本会话尚未产生可计量的上下文数据）" }
-                return { content: contextLine(tokens, DEFAULT_CONTEXT_LIMIT) ?? "（占用率计算不可用）" }
+                return { content: contextLine(tokens, await limitFor(sid)) ?? "（占用率计算不可用）" }
               }
               case "system_time":
                 return { content: systemTimeLine() }
@@ -858,11 +1257,11 @@ const gritDefinition = Plugin.define({
                 const action = String(input?.action ?? "")
                 if (action === "list") {
                   const names = readdirSync(profilesDir).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5))
+                  const active = getActiveProfile()?.name
                   const rows = names.map((n) => {
                     try {
                       const p = JSON.parse(readFileSync(join(profilesDir, `${n}.json`), "utf8")) as Record<string, unknown>
-                      const active = loadActiveProfile(profilesDir)?.name === n
-                      return `${active ? "*" : " "} ${n} — ${String(p.description ?? "")}`
+                      return `${n === active ? "*" : " "} ${n} — ${String(p.description ?? "")}`
                     } catch {
                       return `  ${n} —（解析失败）`
                     }
@@ -872,42 +1271,32 @@ const gritDefinition = Plugin.define({
                 if (action === "show") {
                   const ap = getActiveProfile()
                   if (!ap) return { content: "当前无激活 profile（profiles/active 缺失）。" }
-                  return { content: `当前 profile：${ap.name}\n校准段：${String(ap.profile.calibration)}\n热生效：features 开关与阈值、params（temperature/topP/variant）、calibration\n重启生效：model、permissions、promptVariants` }
+                  return { content: `当前 profile：${ap.name}\n热生效：features 开关与阈值\n自动热生效（~3s）：model、permissions（agents 记录被自动重载，无需重启）\n注意：当前会话已选模型不变；下一次子代理或新会话起用新模型` }
                 }
-                // switch
                 const name = String(input?.name ?? "").trim()
                 if (!name) return { content: "switch 需要 name 参数。" }
-                const pf = join(profilesDir, `${name}.json`)
-                if (!existsSync(pf)) return { content: `profile 不存在：${name}（用 action=list 查看可用项）` }
-                let obj: unknown
-                try {
-                  obj = JSON.parse(readFileSync(pf, "utf8"))
-                } catch (e) {
-                  return { content: `profile JSON 解析失败：${e instanceof Error ? e.message : String(e)}` }
-                }
-                const vr = validateProfile(obj, { expectedName: name, validCalibrations: ["default", "glm", "deepseek"] })
+                const loaded = loadProfileByName(profilesDir, name)
+                if (!loaded) return { content: `profile 不存在：${name}（用 action=list 查看可用项）` }
+                const vr = validateProfile(loaded.profile, { expectedName: name })
                 if (!vr.ok) return { content: `profile 校验失败：${vr.errors.join("；")}` }
+                // 先写 agents 记录（带备份与写后校验）；只有成功才动 active 指针，避免"指针换了、配置没写成"
+                const wr = writeAgentsRecords(name)
+                if (!wr.ok) {
+                  log("c", `SWITCH profile=${name} fail ${wr.message}`)
+                  return { content: `切换失败：${wr.message}\n未改动 profiles/active（仍是原档），当前会话不受影响。` }
+                }
                 const tmp = join(profilesDir, "active.tmp")
                 writeFileSync(tmp, `${name}\n`, "utf8")
                 try { unlinkSync(join(profilesDir, "active")) } catch { /* 首次 */ }
                 renameSync(tmp, join(profilesDir, "active"))
                 profileCache = null
-                let mat = ""
-                try {
-                  const res = materializeAll({
-                    agentsSrcDir: join(home, "agents"),
-                    outDir: agentsOutDir,
-                    profilesDir,
-                    activeName: name,
-                    variantsDir: join(home, "variants"),
-                  })
-                  mat = `已重物化 ${res.written.length} 个代理。`
-                } catch (e) {
-                  mat = `物化失败（可稍后手跑终端命令：grit profile ${name}，或 node ~/.config/opencode/scripts/grit.mjs profile ${name}）：${e instanceof Error ? e.message : String(e)}`
-                }
-                log("c", `SWITCH profile=${name}`)
-                return { content: `已切换到 profile：${name}。${mat}\n立即生效：机制开关与阈值、params、calibration。\n需重启 OpenCode 生效：模型映射、permissions、提示词变体。` }
+                log("c", `SWITCH profile=${name} ok ${wr.message}`)
+                return { content: `已切换到 profile：${name}。已更新 ${wr.message}。\n立即生效：机制开关与阈值。\n自动热生效（~3s，无需重启）：模型映射、permissions。\n注意：当前会话已选模型不变；下一次子代理或新会话起用新模型。` }
               }
+              case "ulw_enter":
+                return { content: await enterUlw(sid, directory, String(input?.goal ?? "")) }
+              case "ulw_exit":
+                return { content: exitUlw(sid, String(input?.reason ?? "model")) }
               default:
                 return { content: `未知工具：${def.name}` }
             }
@@ -916,7 +1305,38 @@ const gritDefinition = Plugin.define({
       }
     })
 
-    // ---- 事件订阅（机制 B/D 数据源；V1 event 钩子 → V2 event.subscribe；载荷在 ev.data） ----
+    // ---- 压缩恢复：压缩完成事件里把契约重新作为一条真消息注入 ----
+    // 恢复只在这里做：context 钩子只允许改消息数组，不能发消息；而且压缩后"历史里找不到契约"这个判据
+    // 已经不再需要（契约本身是一条落库的 user 消息）。事件会分发给每个插件实例 → 用 SHARED 时间戳去重。
+    const restoreAfterCompact = async (sid: string): Promise<void> => {
+      const now = Date.now()
+      const st = loadState(sid)
+      if (!st || !st.active || st.stopReason !== null) {
+        log("a", `COMPACTED s=${sid.slice(0, 8)} 账本未激活，不恢复契约`)
+        return
+      }
+      const last = SHARED.lastCompacted.get(sid) ?? 0
+      if (now - last < 5000) {
+        log("a", `COMPACTED-SKIP s=${sid.slice(0, 8)} reason=dedupe`)
+        return
+      }
+      SHARED.lastCompacted.set(sid, now)
+      const bc = buildContract()
+      if ("error" in bc) {
+        log("a", `COMPACTED s=${sid.slice(0, 8)} 契约缺失：${bc.error}`)
+        return
+      }
+      try {
+        await ctx.session.prompt({ sessionID: sid, text: contractNotice(bc.text, st.objective) })
+        // 刚发过一条真消息，别让续跑门紧接着再推一把
+        getCtr(sid).lastInjectedAt = Date.now()
+        log("a", `COMPACT-RESTORE s=${sid.slice(0, 8)} epoch=${st.epoch}`)
+      } catch (e) {
+        log("a", `COMPACT-RESTORE-FAIL s=${sid.slice(0, 8)} err=${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+
+    // ---- 事件订阅（机制 B/D 数据源） ----
     const controller = new AbortController()
     void (async () => {
       try {
@@ -926,26 +1346,23 @@ const gritDefinition = Plugin.define({
             const data = ((ev as any)?.data ?? (ev as any)?.properties ?? {}) as Record<string, unknown>
             const sid = typeof data.sessionID === "string" ? data.sessionID : undefined
             if (sid) currentSession = sid
-            // 机制 D：token 快照（V2：step.ended=步级，usage.updated=会话累计）
-            if (type === "session.step.ended" || type === "session.usage.updated") {
+            // 上下文占用率的**分子只取「单步」用量**——这是照 OpenCode 官方实现来的：
+            // 官方（cli 内 JS）在 session.step.ended 时用 tokens.input+output+reasoning+cache.read+cache.write
+            // 除以 provider.models[modelID].limit.context 得到百分比（TUI 里那个数）。
+            // 必须注意：session.usage.updated 给的是**会话累计**值，拿它当"当前上下文"会算出上千个百分点
+            // （实测 19.1M/1.0M = 1905%），会把续跑门第 7 条（≥85% 跳过）永久触发、自动续跑彻底失效。
+            if (type === "session.step.ended") {
               if (sid && data.tokens) {
                 const snap = toSnapshot(data.tokens)
                 if (snap) lastTokens.set(sid, snap)
               }
             }
-            // responseObserved（V1 tool.execute.after / message.updated 语义）
-            if (type === "session.tool.called" || type === "session.tool.success" || type === "message.updated") {
-              if (sid) {
-                const st = loadState(sid)
-                if (st && st.active) getCtr(sid).responseObserved = true
-              }
-            }
+            // v1 遗留事件：v2 的 event-manifest 里没有 session.error，这段在 v2 下不会触发，保留兼容
             if (type === "session.error") {
               if (!sid) continue
-              const errText = String(data.error ?? data.message ?? "")
               const st = loadState(sid)
               if (!st || !st.active || st.stopReason !== null) continue
-              const cls = classifyEvent({ errorText: errText })
+              const cls = classifyEvent({ errorText: String(data.error ?? data.message ?? "") })
               if (cls === "abort") {
                 cancelCountdown(sid)
                 getCtr(sid).abortAt = Date.now()
@@ -958,21 +1375,65 @@ const gritDefinition = Plugin.define({
               }
               continue
             }
-            if (type === "session.compacted") {
-              if (sid) log("a", `COMPACTED s=${sid.slice(0, 8)}（恢复由 context 钩子探测执行）`)
+            // 压缩完成：契约可能被压掉，账本仍激活就重注入（fire-and-forget，别阻塞事件循环）。
+            // 事件名必须是 session.compaction.ended：插件事件流走 @opencode/schema 的 ServerDefinitions，
+            // 里面只有 compaction.started/delta/ended/failed；另一个 session.compacted（内部 Definitions 才有）
+            // 到不了插件，用它等于死代码（且真被灌进来会让 OpenCodeEvent 解码失败、整条事件流中断）。
+            if (type === "session.compaction.ended") {
+              if (sid) void restoreAfterCompact(sid)
               continue
             }
-            if (type === "session.idle" || type === "session.status") {
-              const status = data.status as { type?: string } | undefined
-              const isIdle = type === "session.idle" || status?.type === "idle"
+            if (type === "session.execution.started") {
+              if (sid) cancelCountdown(sid)
+              continue
+            }
+            // 用户中止 / 关闭：**不进续跑**，进 abort 窗口并暂停
+            if (type === "session.execution.interrupted") {
               if (!sid) continue
-              if (!isIdle) {
-                cancelCountdown(sid) // 会话恢复活动 → 取消倒计时
+              const st = loadState(sid)
+              if (!st || !st.active || st.stopReason !== null) continue
+              cancelCountdown(sid)
+              getCtr(sid).abortAt = Date.now()
+              const reason = String(data.reason ?? "")
+              if (reason === "shutdown") {
+                saveState({ ...st, stopReason: "aborted", active: false, pauseReason: null })
+                log("b", `STOP s=${sid.slice(0, 8)} reason=aborted(shutdown)`)
+              } else {
+                saveState({ ...st, pauseReason: "user-interruption" })
+                log("b", `PAUSE s=${sid.slice(0, 8)} reason=interrupted:${reason || "?"}`)
+              }
+              continue
+            }
+            // 执行失败：abort / 上下文超限 → 停；其余计一次失败并交给续跑门（冷却 + 失败上限兜底）
+            if (type === "session.execution.failed") {
+              if (!sid) continue
+              const st = loadState(sid)
+              if (!st || !st.active || st.stopReason !== null) continue
+              const cls = classifyEvent({ errorText: errorTextOf(data.error) })
+              if (cls === "abort") {
+                cancelCountdown(sid)
+                getCtr(sid).abortAt = Date.now()
+                saveState({ ...st, stopReason: "aborted", active: false, pauseReason: null })
+                log("b", `STOP s=${sid.slice(0, 8)} reason=aborted`)
                 continue
               }
-              const st = loadState(sid)
-              if (!st) continue
+              if (cls === "overflow") {
+                cancelCountdown(sid)
+                saveState({ ...st, stopReason: "context-overflow", active: false })
+                log("b", `STOP s=${sid.slice(0, 8)} reason=context-overflow`)
+                continue
+              }
+              getCtr(sid).consecutiveFailures += 1
               void handleIdle(sid)
+              continue
+            }
+            // 续跑触发：执行边沿（session.idle 在 2.0.20 manifest 中存在，但本实现只认 succeeded，语义更明确）
+            if (type === "session.execution.succeeded") {
+              if (!sid) continue
+              const st = loadState(sid)
+              if (!st || !st.active || st.stopReason !== null) continue
+              void handleIdle(sid)
+              continue
             }
           } catch (e) {
             log("a", `event 处理失败开放：${e instanceof Error ? e.message : String(e)}`)
@@ -983,9 +1444,13 @@ const gritDefinition = Plugin.define({
       }
     })()
 
-    log("info", "grit 已启动（V2 插件运行时）")
+    SHARED.setups += 1
+    log("c", `SETUP #${SHARED.setups}（同进程插件实例序号）`)
+    if (!SHARED.startedLogged) {
+      SHARED.startedLogged = true
+      log("info", "grit 已启动（V2 插件运行时，DESIGN-v3）")
+    }
 
-    // ---- 清理（V1 dispose → setup 返回的清理函数） ----
     return () => {
       controller.abort()
       for (const t of countdownTimers.values()) clearTimeout(t)
@@ -994,8 +1459,9 @@ const gritDefinition = Plugin.define({
   },
 })
 
-// 可测试内部实现挂 default（非模块导出；V2 loader 只读 id/setup，附加属性无副作用）
 const gritPlugin = Object.assign(gritDefinition, {
+  AGENT_NAMES,
+  DEFAULT_CONTINUATION,
   toSnapshot,
   contextOccupancy,
   contextLine,
@@ -1004,12 +1470,24 @@ const gritPlugin = Object.assign(gritDefinition, {
   leanHandoffSummary,
   matchSentinel,
   assembleContract,
+  disciplineBlock,
   markerLine,
-  todoProgressed,
+  continuationBlock,
+  isPluginInjectedText,
+  contractNotice,
+  exitNoticeBlock,
+  messageText,
+  lastAssistantText,
+  lastUserTextOf,
+  messagesContain,
+  deepMessageText,
+  contractInHistory,
+  errorTextOf,
+  appendInject,
+  responseFingerprint,
+  maxToolRepeat,
   decideContinuation,
   classifyEvent,
-  buildContinuationPrompt,
-  buildNudgePrompt,
   TOOL_DEFS,
 })
 

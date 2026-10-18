@@ -555,7 +555,11 @@ contracts/
 
 ---
 
-## 12. 会话内生效 vs 重启生效边界表（最终）
+## 12. 生效边界表（会话内热 vs 自动热生效）
+
+> **V2 修订（2026-10，OpenCode v2.0.20 实测）**：OpenCode V2 监视配置目录，物化后的
+> `agents/*.md` 变化会被**自动热重载（~3s）**，故模型/权限/提示词变体**不再需要重启**。
+> 下表的"重启"已改判为"自动热生效"；R3"模型切换重启生效"的前提（V1 无热更新）已过时。
 
 | 配置项 | 生效时机 | 途径 |
 |---|---|---|
@@ -563,14 +567,21 @@ contracts/
 | `features.*`（机制开关+全部阈值） | **会话内热**（3s TTL） | 各机制事件入口热读 |
 | `calibration` | **热**（下次 /ulw 绑定；已注入契约不追溯） | 注入器拼装时读 |
 | active 指针切换 | 即时（热项立刻按新 profile 行为） | profile 工具原子写 |
-| `model.*`（含子代理模型） | **重启**（R3 已接受） | 物化器写 frontmatter |
-| `permissions.*` | **重启** | 同上 |
-| `promptVariants.*` | **重启** | 物化器追加正文 |
+| `model.*`（含子代理模型） | **自动热生效（~3s，V2 配置目录监视）** | 物化器写 frontmatter → OpenCode 自动重载 |
+| `permissions.*` | **自动热生效（~3s）** | 同上 |
+| `promptVariants.*` | **自动热生效（~3s）** | 物化器追加正文 |
 | 契约文本编辑（contracts/*.md） | 下次 /ulw 即新文本 | 注入器现读 |
-| 命令模板编辑（commands/*.md） | 重启 | opencode 命令注册表 |
-| `OMO_LITE_DISABLE` | 重启（环境变量） | config 自检读取 |
+| 命令模板编辑（commands/*.md） | 热（未实测；不生效则重启） | opencode 命令注册表 |
+| `GRIT_DISABLE`/`OMO_LITE_DISABLE` | 重启（环境变量） | config 自检读取 |
 
-本表同时写入 profile 工具 show/switch 的返回值与 README（吸收 A 稿）。
+**会话级例外**：已存在的会话保存着它自己选定的 model，切 profile **不改变当前会话模型**；
+新子代理（Task）与新会话才取新模型。这是唯一"看似没生效"的情形，与重启无关。
+
+**TUI 提示插件**：`plugins/grit-tui/tui.ts`（仅 TUI 入口）轮询 `profiles/active`，切换时弹
+`dialog.alert` 模态框，告知"已切换 + 已自动热生效 + 会话级例外"；终端 `grit profile` 与
+会话内 `/profile` 两条路径都覆盖。
+
+本表同时写入 profile 工具 show/switch 的返回值与 README。
 
 ---
 
@@ -581,11 +592,11 @@ contracts/
 1. 备份 opencode.json → `opencode.json.bak-omo-lite`（首次，不覆盖旧备份）；删除 `agent` 块（md 唯一来源）。
 2. 部署：`agents/commands/plugin` → `~/.config/opencode/{agents,commands,plugins}/`；`contracts+profiles+variants+scripts/{materialize-core,materialize}.mjs` → `~/.config/opencode/omo-lite/`；建 `state/`、`log/` 空目录。
 3. 写默认 active（已存在则保留）→ 调 materializeAll → 打印物化摘要（每代理：模型/有无变体段）。
-4. 提示重启。
+4. 完成（插件与 agents 由 OpenCode V2 自动热加载；命令注册表若未生效再重启）。
 
 ### 13.2 uninstall
 
-还原 opencode.json 备份并删备份；删 agents/commands/plugins 中本套文件；**整删 `~/.config/opencode/omo-lite/`**（state/log 无残留）；提示重启。
+还原 opencode.json 备份并删备份；删 agents/commands/plugins 中本套文件；**整删数据根**（state/log 无残留）；完成（V2 自动热卸载；个别残留未清再重启）。
 
 ### 13.3 确定性测试（harness，不依赖活体 opencode；决策核全纯函数）
 

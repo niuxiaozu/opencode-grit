@@ -7,19 +7,13 @@
     "explore": "zhipuai-coding-plan/glm-5.3-flash",
     "general": "zhipuai-coding-plan/glm-5.3-flash",
     "expert": "zhipuai-coding-plan/glm-5.3",
-    "factory": "zhipuai-coding-plan/glm-5.3-flash",
     "browse": "zhipuai-coding-plan/glm-5.3-flash"
   },
-  "calibration": "default",
   "promptVariants": {},
-  "params": { "apply": false, "temperature": null, "topP": null, "variant": null },
-  "permissions": {
-    "build": { "task": { "*": "deny", "plan": "allow", "explore": "allow", "general": "allow", "expert": "allow", "factory": "allow", "browse": "allow" } },
-    "factory": { "task": "deny" }
-  },
+  "permissions": {},
   "features": {
     "contractInjector": { "enabled": false },
-    "todoContinuation": { "enabled": false },
+    "continuation": { "enabled": false },
     "profileEngine": { "enabled": false }
   }
 }
