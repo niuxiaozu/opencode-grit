@@ -230,6 +230,8 @@ ok(cn.includes("目标：做 X") && cn.includes("<!-- GRIT:ULW:CONTRACT -->"), "
 ok(gritPlugin.isPluginInjectedText(cn) === true, "契约提醒块被识别为插件注入（不当用户插话）")
 ok(gritPlugin.isPluginInjectedText(gritPlugin.continuationBlock("x")) === true, "续跑块同样被识别为插件注入")
 ok(gritPlugin.isPluginInjectedText("用户普通消息") === false, "普通用户消息不误判")
+ok(gritPlugin.isSafeGitUrl("https://github.com/a/b.git") === true && gritPlugin.isSafeGitUrl("-c core.pager=cat") === false && gritPlugin.isSafeGitUrl("a b") === false, "clone_repo：url 防参数注入")
+ok(gritPlugin.isSafeGitRef("main") === true && gritPlugin.isSafeGitRef("v1.2.3") === true && gritPlugin.isSafeGitRef("-c core.pager=cat") === false && gritPlugin.isSafeGitRef("a b") === false, "clone_repo：ref 防参数注入")
 const en = gritPlugin.exitNoticeBlock()
 ok(en.startsWith("<system-reminder>") && en.includes("[GRIT:ULW:EXITED]") && en.includes("不再生效"), "退出提醒块带哨兵与失效声明")
 
@@ -243,6 +245,7 @@ process.env.GRIT_HOME = tmpHome2
 
 const SID = "ses_itest_1"
 const prompts: { sessionID: string; text: string }[] = []
+let failNextPrompt = false
 const hooks: Record<string, (e: any) => unknown> = {}
 const tools2 = new Map<string, any>()
 let releaseCompact: () => void = () => {}
@@ -252,7 +255,11 @@ const fakeCtx2 = {
   session: {
     hook: async (name: string, cb: any) => { hooks[name] = cb },
     context: async () => [{ id: "u1", role: "user", content: [{ type: "text", text: "[GRIT:ULW:START]\n做点事" }] }],
-    prompt: async (arg: { sessionID: string; text: string }) => { prompts.push(arg); return {} },
+    prompt: async (arg: { sessionID: string; text: string }) => {
+      if (failNextPrompt) { failNextPrompt = false; throw new Error("simulated prompt failure") }
+      prompts.push(arg)
+      return {}
+    },
     create: async () => ({ id: "ses_new" }),
   },
   model: { list: async () => [] },
@@ -267,6 +274,7 @@ const fakeCtx2 = {
         await compactGate
         yield { type: "session.compaction.started", data: { sessionID: SID, reason: "auto" } }
         yield { type: "session.compaction.ended", data: { sessionID: SID, reason: "auto" } }
+        yield { type: "session.compaction.ended", data: { sessionID: SID, reason: "auto" } } // 5 秒去重：不应重复恢复
       },
     }),
   },
@@ -285,6 +293,8 @@ ok(stAfterEnter.active === true && stAfterEnter.objective === "把 X 做完" && 
 // prompt 钩子：插件自己的契约消息不能被当成用户插话
 hooks.prompt!({ sessionID: SID, prompt: { text: prompts[0]!.text } })
 ok(JSON.parse(readFileSync(stPath, "utf8")).pauseReason === null, "prompt 钩子：契约注入不触发 user-interruption 暂停")
+hooks.prompt!({ sessionID: SID, prompt: { text: "这是一条普通用户消息" } })
+ok(JSON.parse(readFileSync(stPath, "utf8")).pauseReason === "user-interruption", "prompt 钩子：普通用户消息仍会触发插话暂停（负例）")
 
 // context 钩子（激活中）：只贴每轮标记，不重贴契约（历史里已有契约时不追加契约块）
 const msgsActive: any[] = [{ role: "user", content: [{ type: "text", text: "继续" }, { type: "text", text: "<!-- GRIT:ULW:CONTRACT -->\n契约\n<!-- /GRIT:ULW:CONTRACT -->" }] }]
@@ -299,6 +309,14 @@ ok(gritPlugin.messageText(msgsLost[msgsLost.length - 1]).includes("<!-- GRIT:ULW
 const msgsLost2: any[] = [{ role: "user", content: [{ type: "text", text: "继续" }] }]
 hooks.context!({ agent: "build", sessionID: SID, system: [], messages: msgsLost2 })
 ok(!gritPlugin.messageText(msgsLost2[msgsLost2.length - 1]).includes("<!-- GRIT:ULW:CONTRACT -->"), "兜底：60 秒内不重复贴（防每轮重贴）")
+
+// 旧账本（早期字段集，没有 exitNoticePending）不该误贴退出提醒
+const SID_OLD = "ses_itest_old"
+const stPathOld = join(tmpHome2, "state", `${SID_OLD}.json`)
+writeFileSync(stPathOld, JSON.stringify({ schemaVersion: 2, sessionID: SID_OLD, directory: "D:/tmp/itest", active: false, objective: "旧账本", epoch: 1, activatedAt: 0, contractFingerprint: null, stopReason: "completed", pauseReason: null, totalInjections: 0 }), "utf8")
+const msgsOld: any[] = [{ role: "user", content: [{ type: "text", text: "收尾" }] }]
+hooks.context!({ agent: "build", sessionID: SID_OLD, system: [], messages: msgsOld })
+ok(!gritPlugin.messageText(msgsOld[msgsOld.length - 1]).includes("[GRIT:ULW:EXITED]"), "旧账本缺 exitNoticePending：不误贴退出提醒")
 
 // 模型退出：工具结果短确认 + 账本留下待贴提醒
 const exitRes = await tools2.get("ulw_exit").execute({ reason: "done" }, { sessionID: SID })
@@ -322,7 +340,7 @@ ok(prompts.length === 2 && prompts[1]!.text.includes("目标：第二轮"), "再
 // 压缩完成事件 → 账本仍激活 → 重注入契约（started 事件不触发；ended 触发且只一次）
 releaseCompact()
 await sleep(80)
-ok(prompts.length === 3, "压缩事件：只有 compaction.ended 触发一次契约重注入（started 不触发）")
+ok(prompts.length === 3, "压缩事件：只有 compaction.ended 触发了一次重注入（started 不触发、5 秒内第二次 ended 去重）")
 ok(prompts[2]!.text.includes("<!-- GRIT:ULW:CONTRACT -->") && prompts[2]!.text.includes("目标：第二轮"), "压缩恢复：内容 = 契约 + 当前目标")
 
 // 用户路径退出：prompt 钩子命中暗号 → 同一条 exitUlw（不必等模型配合）
@@ -339,6 +357,11 @@ ok(gritPlugin.messageText(msgsUserExit[msgsUserExit.length - 1]).includes("[GRIT
 const msgsMention: any[] = [{ role: "user", content: [{ type: "text", text: "我之前说过 [GRIT:ULW:EXIT] 这个词" }] }]
 hooks.context!({ agent: "build", sessionID: SID, system: [], messages: msgsMention })
 ok(!gritPlugin.messageText(msgsMention[msgsMention.length - 1]).includes("[GRIT:ULW:EXITED]"), "提到暗号 ≠ 退出事件：不再按子串扫用户消息")
+
+// prompt 注入失败 → 退回工具结果并如实说明
+failNextPrompt = true
+const enterFail = await tools2.get("ulw_enter").execute({ goal: "注入失败兜底" }, { sessionID: SID })
+ok(String(enterFail.content).includes("注入失败") && String(enterFail.content).includes("<!-- GRIT:ULW:CONTRACT -->"), "进入：prompt 注入失败时退回工具结果兜底")
 
 // ===================== 结果 =====================
 console.log(`\n${passed} passed, ${failed} failed`)

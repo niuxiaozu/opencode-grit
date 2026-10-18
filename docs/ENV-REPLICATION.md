@@ -137,6 +137,8 @@ D:\workspace\selfProjects\agent-worktemp\
 
 分档靠 `profiles/*.json`（改 `agents` 记录里的 model 与权限），`opencode-go` 是日常档；切档用 `/profile <名字>`（会话内）或终端 `grit profile <名字>`，v2 监视配置目录，约 3 秒热生效（当前会话已选的模型不变）。
 
+**子代理描述只写"能干什么"**：`agents/index.json` 里的 `description` 只陈述能力，不写"什么时候用我"——"什么时候用谁"只写在 build 的路由表（`contracts/discipline/build.md` 的 `<routing_table>`）与 `<expert_policy>` 里，避免子代理自我推销导致乱派活。`plan` 归 OpenCode 原生，不在这套改写范围内。
+
 ### 2.4 规则与优先级
 
 - `AGENTS.md`（用户自己的）**权威最高**，跟环境强相关：成本纪律（一轮消息里把已知的工具调用全并行发出去）、面向用户的文风、密钥红线。
@@ -420,7 +422,7 @@ node "C:\Users\Administrator\.config\opencode\scripts\grit.mjs" %*
 | 交接摘要模板 | `grit\contracts\handoff-template.md`（同时要同步 `commands/handoff.md` 里的内嵌副本） |
 | 全局规则（成本/文风/密钥） | `~\.config\opencode\AGENTS.md` |
 | 档位/模型/权限 | `~\.config\opencode\grit\profiles\<档>.json` |
-| 工具清单/agent 描述 | grit 仓库 `agents/index.json` + `profiles/*`，重跑 `node scripts/install.mjs` |
+| 工具清单/agent 描述 | grit 仓库 `agents/index.json` + `profiles/*`，重跑 `node scripts/install.mjs`（描述只写能力，不写"什么时候用我"；plan 归原生不动） |
 
 > 改仓库里的东西要**从仓库改**（改完 `node scripts/install.mjs` 同步）——直接改 `~\.config\opencode` 里那份，下次安装会被覆盖。
 
@@ -623,7 +625,7 @@ Stop only when the whole task is done. Every extra turn costs money.
   "agents": {
     "build": {
       "mode": "primary",
-      "description": "Build orchestrator (default tier).",
+      "description": "Orchestrator agent. Splits work into independent units, delegates to subagents, integrates their results, and implements small changes directly.",
       "model": "opencode-go/deepseek-v4.1-flash",
       "permissions": [
         {
@@ -665,7 +667,7 @@ Stop only when the whole task is done. Every extra turn costs money.
     },
     "explore": {
       "mode": "subagent",
-      "description": "Read-only search agent for project code AND installed/external dependency source (covers scout via clone_repo).",
+      "description": "Read-only search agent. Locates code and configuration across the project and installed dependency source, then returns a condensed digest with absolute paths and line anchors.",
       "model": "opencode-go/deepseek-v4.1-flash",
       "permissions": [
         {
@@ -677,17 +679,17 @@ Stop only when the whole task is done. Every extra turn costs money.
     },
     "general": {
       "mode": "subagent",
-      "description": "General-purpose multi-step executor.",
+      "description": "General-purpose executor. Carries out one scoped unit of work end to end and reports the real output it produced.",
       "model": "opencode-go/deepseek-v4.1-flash"
     },
     "expert": {
       "mode": "all",
-      "description": "Escalation specialist — read-only consultant for hard problems: architecture decisions, hard debugging of serious blockers that resisted several different approaches, unfamiliar patterns, high-blast-radius changes, and post-implementation review.",
+      "description": "Read-only consultant. Analyzes architecture and design tradeoffs, diagnoses hard failures, and reviews changes for defects and risk; answers with one recommendation backed by file:line evidence.",
       "model": "opencode-go/glm-5.3"
     },
     "browse": {
       "mode": "subagent",
-      "description": "Browser agent — operates a real browser like a human: open-ended research across search engines and content platforms, scraping/collecting data, driving page flows, UI-testing the user's own app. Every claim anchored to URL + selector + quote.",
+      "description": "Browser automation agent. Drives a real Chromium browser to navigate pages, read and extract content, fill forms, click through flows, and capture screenshots; reports every finding anchored to URL + selector + quote.",
       "model": "opencode-go/deepseek-v4.1-flash"
     }
   }

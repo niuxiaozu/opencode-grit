@@ -26,7 +26,7 @@
       "enabled": true, "countdownSeconds": 2, "cooldownBaseMs": 5000,
       "backoffPowCap": 5, "maxConsecutiveFailures": 5, "failureResetWindowMs": 600000,
       "maxStagnation": 2, "abortWindowMs": 3000, "contextSkipPct": 85,
-      "maxTotalInjections": 200, "toolLoopWarn": 3, "toolLoopStop": 5
+      "maxTotalInjections": 200, "toolLoopStop": 5
     },
     "profileEngine": { "enabled": true }
   }

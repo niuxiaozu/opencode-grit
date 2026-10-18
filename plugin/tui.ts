@@ -2,7 +2,7 @@
  * grit TUI 插件 — profile 切换的显著提示（OpenCode V2 CLI/TUI 插件）。
  *
  * 职责单一：只"提示"，不参与生效。OpenCode V2 会监视配置目录，profile 切换
- * 物化的 agents/*.md 会被自动热重载（~3s，无需重启）；本插件轮询 profiles/active，
+ * 物化到 opencode.json 的 agents 配置记录会被自动热重载（~3s，无需重启）；本插件轮询 profiles/active，
  * 变化即弹模态 dialog.alert（必须点掉，比 toast 更显著）。
  *
  * 部署：~/.config/opencode/plugins/grit-tui/tui.ts（仅 TUI 入口，无 index.ts）。

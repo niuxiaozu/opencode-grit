@@ -123,7 +123,6 @@ export interface ContinuationConfig {
   abortWindowMs: number
   contextSkipPct: number
   maxTotalInjections: number
-  toolLoopWarn: number
   toolLoopStop: number
 }
 
@@ -131,7 +130,7 @@ export const DEFAULT_CONTINUATION: ContinuationConfig = {
   countdownSeconds: 2, cooldownBaseMs: 5000, backoffPowCap: 5,
   maxConsecutiveFailures: 5, failureResetWindowMs: 600000, maxStagnation: 2,
   abortWindowMs: 3000, contextSkipPct: 85, maxTotalInjections: 200,
-  toolLoopWarn: 3, toolLoopStop: 5,
+  toolLoopStop: 5,
 }
 
 // ===================== 纯函数（挂 default 供测试） =====================
@@ -516,6 +515,17 @@ function classifyEvent(input: { errorText?: string }): EventClass {
   return "other"
 }
 
+/**
+ * clone_repo 入参防护（纯函数，便于测试）：git 会把以 `-` 开头的参数当选项，未校验时
+ * 模型可以传 `ref="-c core.pager=cat"` 这种"正当输入"去改写 git 行为。
+ */
+export function isSafeGitUrl(url: string): boolean {
+  return url.length > 0 && !url.startsWith("-") && !/\s/.test(url)
+}
+export function isSafeGitRef(ref: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref)
+}
+
 // ===================== 工具定义 =====================
 
 export interface ToolDefLite {
@@ -739,7 +749,7 @@ const gritDefinition = Plugin.define({
         backoffPowCap: num("backoffPowCap"), maxConsecutiveFailures: num("maxConsecutiveFailures"),
         failureResetWindowMs: num("failureResetWindowMs"), maxStagnation: num("maxStagnation"),
         abortWindowMs: num("abortWindowMs"), contextSkipPct: num("contextSkipPct"),
-        maxTotalInjections: num("maxTotalInjections"), toolLoopWarn: num("toolLoopWarn"), toolLoopStop: num("toolLoopStop"),
+        maxTotalInjections: num("maxTotalInjections"), toolLoopStop: num("toolLoopStop"),
       }
     }
     const contEnabled = (): boolean => {
@@ -1219,13 +1229,16 @@ const gritDefinition = Plugin.define({
                 const url = String(input?.url ?? "").trim()
                 if (!url) return { content: "clone_repo 需要 url 参数（Git 仓库地址）。" }
                 const full = /^[\w.-]+\/[\w.-]+$/.test(url) ? `https://github.com/${url}.git` : url
+                const ref = typeof input?.ref === "string" ? input.ref.trim() : undefined
+                // 参数注入防护：git 会把以 - 开头的参数当选项（例如 ref="-c core.pager=cat"）
+                if (!isSafeGitUrl(full)) return { content: "clone_repo：url 不合法（不能以 - 开头、不能含空白）。" }
+                if (ref !== undefined && !isSafeGitRef(ref)) return { content: "clone_repo：ref 只允许字母/数字/._/-，且不能以 - 开头。" }
                 const safe = full.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120)
-                const ref = typeof input?.ref === "string" ? input.ref : undefined
                 const cacheRoot = process.env.CLONE_CACHE ?? join(process.env.USERPROFILE ?? process.env.HOME ?? "C:/Users/Administrator", ".cache", "opencode", "clone")
                 const dest = join(cacheRoot, safe)
                 if (existsSync(dest)) {
                   if (ref) {
-                    const r = spawnSync("git", ["-C", dest, "checkout", ref], { encoding: "utf8", timeout: 120_000 })
+                    const r = spawnSync("git", ["-C", dest, "checkout", "--detach", ref], { encoding: "utf8", timeout: 120_000 })
                     if (r.status !== 0) return { content: `已存在缓存但 checkout ${ref} 失败：${r.stderr.slice(0, 300)}` }
                   }
                   return { content: `已克隆缓存：${dest}\n（重新 checkout ${ref ?? "默认"} 完成）` }
@@ -1233,7 +1246,7 @@ const gritDefinition = Plugin.define({
                 mkdirSync(cacheRoot, { recursive: true })
                 const gitArgs = ["clone", "--depth", "1"]
                 if (ref) gitArgs.push("--branch", ref)
-                gitArgs.push(full, dest)
+                gitArgs.push("--", full, dest)
                 const r = spawnSync("git", gitArgs, { encoding: "utf8", timeout: 300_000 })
                 if (r.status !== 0) return { content: `clone 失败：${r.stderr.slice(0, 400) || r.stdout.slice(0, 400)}` }
                 return { content: `克隆完成：${dest}\n可用 read/grep/glob 检查该目录下的源码。` }
@@ -1488,6 +1501,8 @@ const gritPlugin = Object.assign(gritDefinition, {
   maxToolRepeat,
   decideContinuation,
   classifyEvent,
+  isSafeGitUrl,
+  isSafeGitRef,
   TOOL_DEFS,
 })
 

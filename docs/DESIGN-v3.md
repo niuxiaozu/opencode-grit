@@ -179,7 +179,7 @@ tools      5（context_usage/system_time/clone_repo/handoff/profile）
 
 ### A — 契约注入（/ulw）◆ 保留、微调
 - `/ulw <目标>` 触发：把**模式块**（纪律契约：场景契约 / 双证据 / 审查门 / MANUAL QA / 零容忍 / 完成判定 / 交接阶梯）注入一次（持久）。
-- `context` 钩子负责**压缩恢复**（首尾哨兵都不在时，固定早位置插回）+ **每轮一行标记**（非持久）。
+- `context` 钩子负责**每轮一行标记**（非持久）；契约的注入点有两处，都用 `ctx.session.prompt` 发成**一条真消息**（持久）：进入（`ulw_enter`）与**压缩完成事件**（`session.compaction.ended`）。
 - 微调：契约文本外置 `contracts/`；注入格式改为**独立块/合成消息**（§7）。
 
 ### B — 持续工作续跑 ◆ 简化（无 todo、无判据库、模型自判完成）
@@ -224,7 +224,7 @@ context_usage · system_time · clone_repo · handoff · profile（**不新增 t
 
 ```
 <repo>
-├── contracts/         ulw.md, handoff-template.md, discipline/*, calibration/*
+├── contracts/         ulw.md, handoff-template.md, discipline/*
 ├── variants/<name>/discipline/*.md
 ├── profiles/*.json    （name/description/model/promptVariants/permissions/features）
 ├── plugin/            grit.ts, tui.ts
@@ -317,3 +317,17 @@ context_usage · system_time · clone_repo · handoff · profile（**不新增 t
 2. 纪律段粒度 → 默认 **7 席各一份 + `_shared.md`**。
 3. `agents` 记录落点 → 先做 V-3 实验；默认写全局 `opencode.json`。
 4. 完成标记文本 → 默认 `[grit:done:v1]`（整行哨兵）。
+
+---
+
+## 16. 2026-10-19 变更（ULW 进入/退出注入方式）——与前文冲突处以本节为准
+
+覆盖：0.2 修订记录第 1 条（"契约由返回值携带"）、第 7 条（`<grit-inject>`）、§6A 的两条 bullet、§15 第 2/4 条。
+
+1. **契约是"一条真消息"**：`ulw_enter` 校验授权后，用 `ctx.session.prompt({sessionID, text})` 把「契约 + 目标」注入成本会话的一条真实用户消息（`<system-reminder>` 包裹，契约块保留 `<!-- GRIT:ULW:CONTRACT -->` 首尾哨兵）。工具返回值只回一句短确认；只有 prompt 注入失败时才把契约退回工具结果兜底。理由：工具结果在上下文压缩后会丢，真消息不会。
+2. **压缩恢复走事件**：删除 `context` 钩子里"扫哨兵 + 补契约"的恢复分支，改在 **`session.compaction.ended`** 重注入一次契约（多实例按会话 5 秒去重），并刷新续跑计时避免紧接着双推。**`session.compacted` 到不了插件**：插件事件流走 `@opencode/schema` 的 `ServerDefinitions`，其中只有 `session.compaction.{started,delta,ended,failed}`（`session.compacted` 只在内部 `Definitions` 里）。
+3. **兜底**：`context` 钩子在账本 active 且历史里确实找不到契约时贴回一次（60 秒节流），覆盖 revert / 收件箱取消这类没有压缩事件的丢失路径。
+4. **退出提醒由账本驱动**：`exitUlw` 置 `exitNoticePending=true`，下一次请求组装贴一次「已退出」提醒并清标记；不再扫用户消息里的 `[GRIT:ULW:EXIT]` 子串（用户正文提到该词会误判）。用户 `/ulw-exit` 与模型 `ulw_exit` 共用同一函数、同一段文本。
+5. **prompt 钩子识别自己的注入**：`isPluginInjectedText()`（契约块 / 续跑块）直接跳过，否则刚注入的契约会被当成"用户插话"，把刚进入的账本打成暂停。
+6. **同一批的其他清理**：`_shared.md` 已删（各角色说明书自带完成标准）；Dead 字段 `toolLoopWarn` 已从类型、默认值与 profile 中删除；`clone_repo` 增加 url/ref 参数注入防护（`--`、`--detach`、字符集与首字符校验 + 纯函数 `isSafeGitUrl`/`isSafeGitRef`）。
+7. **子代理 `description` 只写能力**，不写"什么时候用我"——"什么时候用谁"只在 build 的 `<routing_table>` 与 `<expert_policy>` 里。（`plan` 归 OpenCode 原生，不动。）

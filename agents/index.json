@@ -1,7 +1,7 @@
 {
   "build": {
     "mode": "primary",
-    "description": "Build orchestrator (default tier)."
+    "description": "Orchestrator agent. Splits work into independent units, delegates to subagents, integrates their results, and implements small changes directly."
   },
   "plan": {
     "mode": "primary",
@@ -9,21 +9,21 @@
   },
   "explore": {
     "mode": "subagent",
-    "description": "Read-only search agent for project code AND installed/external dependency source (covers scout via clone_repo).",
+    "description": "Read-only search agent. Locates code and configuration across the project and installed dependency source, then returns a condensed digest with absolute paths and line anchors.",
     "permissions": [
       { "action": "clone_repo", "resource": "*", "effect": "allow" }
     ]
   },
   "general": {
     "mode": "subagent",
-    "description": "General-purpose multi-step executor."
+    "description": "General-purpose executor. Carries out one scoped unit of work end to end and reports the real output it produced."
   },
   "expert": {
     "mode": "all",
-    "description": "Escalation specialist — read-only consultant for hard problems: architecture decisions, hard debugging of serious blockers that resisted several different approaches, unfamiliar patterns, high-blast-radius changes, and post-implementation review."
+    "description": "Read-only consultant. Analyzes architecture and design tradeoffs, diagnoses hard failures, and reviews changes for defects and risk; answers with one recommendation backed by file:line evidence."
   },
   "browse": {
     "mode": "subagent",
-    "description": "Browser agent — operates a real browser like a human: open-ended research across search engines and content platforms, scraping/collecting data, driving page flows, UI-testing the user's own app. Every claim anchored to URL + selector + quote."
+    "description": "Browser automation agent. Drives a real Chromium browser to navigate pages, read and extract content, fill forms, click through flows, and capture screenshots; reports every finding anchored to URL + selector + quote."
   }
 }
