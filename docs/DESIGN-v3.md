@@ -157,7 +157,7 @@ tools      7 个（context_usage/system_time/clone_repo/handoff/profile/ulw_ente
 | `plan` | primary（**v2 原生，grit 不物化**） | 是（Plan mode 提醒） | ——（不进 grit 名册） | ——（纪律文件已删） |
 | `explore` 检索 | subagent | **是（内置搜索提示词）** | 配置记录（**必须省 system**） | 摘要契约 · 深读 · clone_repo 例外 |
 | `general` 执行 | subagent | 否 | 配置记录（省 system） | scope · 验证 · 报告 · 终止 |
-| `sage` 决策 | **subagent + hidden** | 无 | 配置记录（省 system） | 判断力/世界知识/方案指定（总是完整方案） |
+| `sage` 决策 | subagent | 无 | 配置记录（省 system） | 判断力/世界知识/方案指定（总是完整方案） |
 | `browse` 浏览 | subagent | 无 | 配置记录（省 system） | 任务 · 工具 · 锚点纪律 |
 
 名额 **5**（build/explore/general/sage/browse；`plan` 交回 v2 原生，不进本名册）。
@@ -166,7 +166,7 @@ tools      7 个（context_usage/system_time/clone_repo/handoff/profile/ulw_ente
 - `build`/`general`：v2 内置**无 system** → **天然兼容**，薄覆盖 + 追加纪律即可。
 - `explore`：v2 是**只读定位器**（找位置、thoroughness 分级）；grit 是**理解/压缩器**（深读全链、只回 digest，正是"避免污染上下文、只留有用内容"）。**同槽合成**：取 v2 外壳（名/描述/只读权限/子代理目录呈现）+ grit 摘要契约；并**显式放行 `clone_repo`**（v2 的 `* deny` 会拒掉它；v2 已无内置 `scout`，这块由 explore 补位）。
 - `plan`：**采用 v2 原生 primary 模式**（只读围栏 + 提醒 + plan 目录）；grit 不再物化它的记录、不再注入纪律。
-- `sage`：v2 无等价物；**保留**为唯一强档席位（判断力 / 世界知识 / 方案指定）。**`mode: subagent` + `hidden: true`**：不进用户可见清单（Tab / @），也不进"模型可见的子代理目录"；但按名字调用仍可用（实测通过），所以 build 靠自己的纪律点名调它。
+- `sage`：v2 无等价物；**保留**为唯一强档席位（判断力 / 世界知识 / 方案指定）。**`mode: subagent`**：不进用户的主代理列表（Tab）；它**仍在** @ 菜单与"模型可见的子代理目录"里——这是我们要的，build 得看得见它才会在需要时调它。（试过再叠 `hidden: true`，但 v2 的 hidden 会连"subagent catalog"一起摘掉，等于让 build 只能靠纪律硬记名字，已撤。）
 
 **不强制流水线**：角色"有用才用"，不是必需管线（学 `opencode-orchestrator`）。
 
@@ -334,7 +334,7 @@ context_usage · system_time · clone_repo · handoff · profile（**不新增 t
 9. **`plan` 移出 grit 框架**：它是 OpenCode 原生代理（`opencode.plan`，自带 `edit:deny` 权限与 Plan-mode 合成提醒），只可能由用户手动切换进入。grit 不再物化它的 agents 记录（`REMOVED_AGENT_NAMES = ["factory", "plan"]`，安装/切档时会清掉旧记录）、不再注入 `contracts/discipline/plan.md`（文件已删）、`AGENT_NAMES` 从 6 席变 5 席；profile 里的 `plan` 模型映射与 `subagent plan` 放行也一并移除。这样原生的身份/权限/描述不被我们覆盖。
 10. **`expert` 更名 `sage`，只负责"事前定方案"**：弱管强架构下弱模型缺的是判断力与世界知识；plan 交回原生后，"需要顶级模型指定方案"的场景改由这个席位承担。改名 `expert` → `sage`（旧记录进 `REMOVED_AGENT_NAMES` 清掉），`contracts/discipline/sage.md` = 原 expert.md + 原 plan.md 的 `project_maturity` / 计划标准 / `intent_routing` / `method` 合并重写；输出契约改成"**总是**交完整方案"（首行 1-2 句结论 + 决策完备模板）。**它是动手前定方案的席位，不做事后复审**——"改完让 sage 复核一遍"这种用法删掉（验证归建它的人；只有卡死的执行难题才按 `<failure_recovery>` 升级）。build 的 `<expert_policy>` 随之更名 `<sage_policy>`，路由表全部改指 `sage`。
 11. **（已撤）子代理请求协议**：曾加过 `<grit-request>` 协议（子代理回块向 build 提要求 + 每单元 2 轮上限），后按用户判断整体撤掉——一次协调式提问换来的收益不抵提示词与调用成本，子代理缺信息按各自纪律处理（`sage` 在 Open questions 里说明缺口；`explore` 自己读；`general`/`browse` 按简报执行）。
-12. **`sage` 改为"内部席位"**：`mode: subagent` + `hidden: true`（物化器为此新增 `hidden` 字段支持）。用户可见清单（主代理 Tab、@ 补全）与"模型可见的子代理目录"都不再出现它；但 v2 的调用路径只检查 `mode` 与权限，**按名字调用仍可用——实测**：`subagent(agent="sage")` 正常返回。因此 build 靠自身纪律（路由表/<sage_policy>）点名调用它。
+12. **`sage` 改为 `mode: subagent`**：不进用户的主代理列表（Tab 里不再出现），它仍在 @ 菜单与"模型可见的子代理目录"里——这是要的，build 得看得见它才会在需要时调它。**曾叠过 `hidden: true` 又撤掉**：v2 的 hidden 会把代理从"subagent catalog"（Task 工具描述里那份 Available subagents）里一起摘掉，实测虽仍能按名字调用，但等于让 build 只能靠纪律硬记名字，不如让它正常可见。
 13. **按 v2 官方文档校正**：v2 **无内置 `scout`**（explore 放行 `clone_repo` 即在补位）；**新自定义代理 `mode` 默认 `primary`**；`hidden` 会同时摘掉"subagent catalog"；子代理**没配 model 时继承父会话 model**；权限 action 改名为 `task → subagent`、`bash → shell`、`write/patch → edit`；`external_directory` 默认放行；`cli.json` 取代 `tui.json`；**v2 不跑 LSP、不暴露 LSP 工具** → `general.md` 的完成标准由 `lsp_diagnostics` 改为"项目自己的 lint/typecheck/build/test"。
 
 ---
@@ -347,7 +347,7 @@ context_usage · system_time · clone_repo · handoff · profile（**不新增 t
 2. **子代理 = 全新上下文的子会话**，前台或后台；父代理用 `subagent` 权限控制"能启动谁"，**权限不继承**；子代理没配 `model` 时继承父会话的 model。
 3. **子会话可导航**：`session_child_first`(Leader+Down) / `session_child_cycle`(Right) / `_reverse`(Left) / `session_parent`(Up)。
 4. **嵌套默认禁止**：`experimental.subagent_depth` 默认 **1**；超限报 `Subagent depth limit reached (N). Increase "subagent_depth" to allow nested subagents.`（二进制里同串核对）。**官方没有推荐"兄弟互调"**——内置 general 的定义本身就写着 "cannot launch more subagents"。
-5. **`hidden: true`**：从常规列表、交互发现、Task 工具描述里的 "Available subagents" 清单移除（二进制里那句 `filter(q => q.mode !== "primary" && !q.hidden && …)` 即此）；**不拦按名字调用**（调用路径只查 mode 与权限）——本机以 `sage` 实测通过。
+5. **`hidden: true`**：从常规列表、交互发现、Task 工具描述里的 "Available subagents" 清单移除（二进制里那句 `filter(q => q.mode !== "primary" && !q.hidden && …)` 即此）；**不拦按名字调用**（调用路径只查 mode 与权限）——本机实测过，但因为会连"模型可见的子代理目录"一起摘掉，**没有采用**（见 §16 第 12 条）。
 6. **权限 action 命名**：`task → subagent`、`bash → shell`、`write/patch → edit`；v2 用有序 `permissions` 数组，**后匹配者胜**；`permission.task`（V1 写法）/ glob 形式的拒绝对应 v2 的 `subagent` action。
 7. **v2 无内置 `scout`**（v1 有）；外部依赖研究用 `explore`（本仓库给它放行 `clone_repo`）或 `references`。
 8. **v2 不跑 LSP**：接受 `lsp` 配置但不启动语言服务器、不暴露 LSP 工具、不产诊断 → 完成标准写项目自己的命令。

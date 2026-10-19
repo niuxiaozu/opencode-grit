@@ -161,7 +161,7 @@ const realIdx = readAgentsIndex(join(import.meta.dirname ?? ".", "..", "agents",
 ok(Object.keys(realIdx).length === 5, `仓库 agents/index.json 含 5 席（实际 ${Object.keys(realIdx).length}）`)
 ok(!("factory" in realIdx), "已移除 factory 席")
 ok(!("plan" in realIdx), "plan 不在 grit 名册（由 OpenCode 原生 plan 模式承担）")
-ok(realIdx.sage?.mode === "subagent" && realIdx.sage?.hidden === true, "sage 是 subagent 且 hidden（不出现在用户可见清单）")
+ok(realIdx.sage?.mode === "subagent", "sage 是 subagent（不进主代理列表；仍在子代理目录里，build 能调）")
 
 // ===================== 8. 插件形态（V2） =====================
 console.log("[plugin shape]")

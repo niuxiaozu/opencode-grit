@@ -66,8 +66,6 @@ export interface Perm {
 export interface AgentDef {
   mode: "subagent" | "primary" | "all"
   description: string
-  /** 隐藏：不出现在任何用户可见清单，也不进"模型可见的子代理目录"（按名字仍可调用）。 */
-  hidden?: boolean
   /** 结构性命名的权限（如 explore 放行 clone_repo）；最终追加在内置权限之后（后者覆盖前者）。 */
   permissions?: Perm[]
 }
@@ -76,7 +74,6 @@ export interface AgentDef {
 export interface AgentRecord {
   mode: string
   description: string
-  hidden?: boolean
   model?: string
   permissions?: Perm[]
 }
@@ -110,7 +107,6 @@ export function buildAgentRecord(
     for (const p of extra) if (isPerm(p)) perms.push(p)
   }
   const record: AgentRecord = { mode: def.mode, description: def.description }
-  if (def.hidden) record.hidden = true
   if (model) record.model = model
   if (perms.length > 0) record.permissions = perms
   return { record, warnings }
