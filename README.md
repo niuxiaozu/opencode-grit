@@ -21,6 +21,7 @@
 | `plan` 交回 **OpenCode 原生 plan 模式** | 用户手动切到 plan 才用它；grit 不再物化它的记录、不注入纪律（原生自带 `edit:deny` 权限与 Plan-mode 提醒已经够） |
 | 名册 **5 席**（`plan` 交回原生；早前已移除 `factory`） | 造数/测试工作由 `general` 直接承担，不再单设席位 |
 | `sage` 只负责**事前定方案**，不做事后复审 | 改完再让贵模型复核一遍等于把成本翻倍；验证归建它的人，只有卡死的执行难题才按 `<failure_recovery>` 升级 |
+| `sage` **对用户不可见**（`mode: subagent` + `hidden: true`） | 它是内部顾问席位，不该出现在主代理 Tab / @ 补全里；hidden 也会把它从"模型可见的子代理目录"摘掉，但按名字调用仍可用（实测通过），build 靠自己的纪律点名调它 |
 | （撤）子代理请求协议 | 曾试过 `<grit-request>`（子代理回块向 build 提要求 + 每单元 2 轮上限），判断为"提示词与调用成本不抵收益"，整体撤掉 |
 
 > **验证状态（2026-10-16 复审）**：`npx tsc --noEmit` 干净、`npm test`（`harness/smoke.ts`）全绿（DESIGN-v3 §11 的 V-9 已过）；V-4（省略 system 后 explore 内置提示词保留）、V-7（合成消息）、V-8（provider 作用域）**仍未做活体实测**——本表相关结论按「设计依据」读，不当「已验证」。
@@ -30,7 +31,7 @@
 
 | 层 | 内容 | 说明 |
 |---|---|---|
-| 代理层 | 5 席（`agents/index.json` 定义 → opencode.json `agents` 记录） | build（主编排）/ explore（只读检索 + 放行 clone_repo）/ general（并行执行）/ **sage（顶级模型席位：判断力、世界知识、方案指定——总是交完整方案）** / browse（浏览器代理）。model/permissions 由 profile 物化。`plan` 不在名册里——它是 OpenCode 原生只读 plan 模式，用户手动切换使用 |
+| 代理层 | 5 席（`agents/index.json` 定义 → opencode.json `agents` 记录） | build（主编排）/ explore（只读检索 + 放行 clone_repo，补 v2 已无的 scout 位）/ general（并行执行）/ **sage（顶级模型席位：判断力、世界知识、方案指定——总是交完整方案；`mode: subagent` + `hidden: true`，用户列表里看不到）/ browse（浏览器代理）**。model/permissions 由 profile 物化。`plan` 不在名册里——它是 OpenCode 原生只读 plan 模式，用户手动切换使用 |
 | 命令层 | `/ulw` `/ulw-exit` `/handoff` `/profile` | 原生斜杠命令。**命令正文只含哨兵 + 用户参数**（不混入 grit 模板文字）；指令由带标签块 `<grit-inject>` 注入**消息通道**（`/ulw-exit` 首行哨兵由插件识别，`/ulw` 按真实用户消息处理） |
 | 契约层 | `contracts/ulw.md` + `contracts/discipline/*.md`（5 席各一份）+ `handoff-template.md` | 纪律正文外置；**运行时**追加，改文件即改纪律（无需重启）。注：原先还有一份共用的完成纪律 `_shared.md`，已于 2026-10-18 删除（那类"完成标准/不许删改判据"的强制规范归 ULW 模式，由契约承担） |
 | profile 层 | `profiles/{default,opencode-go,deepseek,glm-max,strict,bare}.json` + `active` 指针 | 模型映射/纪律变体/行为参数/权限/机制开关，一键切换 |

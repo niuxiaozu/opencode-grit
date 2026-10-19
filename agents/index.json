@@ -15,7 +15,8 @@
     "description": "General-purpose executor. Carries out one scoped unit of work end to end and reports the real output it produced."
   },
   "sage": {
-    "mode": "all",
+    "mode": "subagent",
+    "hidden": true,
     "description": "Read-only senior advisor. Owns the team's judgment, world knowledge and approach specification: returns the decision-complete plan for how the work should be built (options, tradeoffs, one recommendation), and diagnoses failures that resisted other approaches."
   },
   "browse": {

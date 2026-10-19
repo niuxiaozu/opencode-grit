@@ -130,7 +130,7 @@ D:\workspace\selfProjects\agent-worktemp\
 |---|---|---|
 | build | 编排：自己干 / 派活 / 升级 / 分档 | deepseek-v4.1-flash（便宜档） |
 | explore | 只读搜索，回摘要 + 文件行号锚点 | deepseek-v4.1-flash |
-| sage | 顶级模型席位（弱模型干不了的那些）：判断力、世界知识、**方案指定**——**动手前**定方案，**总是交完整方案**（决策完备模板：Context/Steps/Risks/Out of scope/Open questions）；不做事后复审 | glm-5.3（贵档） |
+| sage | 顶级模型席位（弱模型干不了的那些）：判断力、世界知识、**方案指定**——**动手前**定方案，**总是交完整方案**（决策完备模板）；**对用户不可见**（`mode: subagent` + `hidden: true`，不进 Tab/@ 列表，也不进模型的子代理目录；build 按名字调用，已实测可用）；不做事后复审 | glm-5.3（贵档） |
 | general | 多步执行 | deepseek-v4.1-flash |
 | browse | 真实浏览器研究/采集 | deepseek-v4.1-flash |
 
@@ -153,6 +153,20 @@ D:\workspace\selfProjects\agent-worktemp\
 
 - `opencode-worktime` 可以按时间表"暂停/恢复会话"或定时发消息（例如凌晨自动暂停、早上恢复），用来避开模型 API 高峰。
 - `opencode-tui-tunnel` + Caddy 可以把 TUI 通过浏览器远程用（tmux 后端、手机也能开）。
+
+### 2.7 v2 代理协作事实（按官方文档核对，2026-10-19）
+
+复现这台机器时会用到，省得再翻文档：
+
+- **两种代理**：`primary`（主对话，Tab 切换）与 `subagent`（"Runs only in a child session through the `subagent` tool"，也可用户 `@` 点名）。**新自定义代理的 `mode` 默认 `primary`**。
+- **子代理跑在全新上下文的子会话里**（前台或后台）；父代理的 `subagent` 权限决定它能启动谁；**子代理用自己配置的权限**（不继承父的）；子代理没配 `model` 时**继承父会话的 model**。
+- **子会话可导航**（TUI 键位）：`session_child_first`（Leader+Down）进第一个子会话、`session_child_cycle`(Right) / `_reverse`(Left) 在子会话间切、`session_parent`(Up) 回父会话。
+- **兄弟互调默认禁止**：`experimental.subagent_depth` 默认 **1**（子代理不能再派子代理），超了报 `Subagent depth limit reached (1). Increase "subagent_depth" to allow nested subagents.`（v1 的顶层 `subagent_depth` 在 v2 被忽略并告警）。
+- **`hidden: true`**：从常规列表、交互发现、**以及"模型可见的子代理目录"（Task 工具描述里那份 Available subagents）**里移除；**但不拦"按名字调用"**——本机实测 `subagent(agent="sage")` 正常返回。只在 `mode: subagent` 时有意义。本机 `sage` 就用的这招（用户列表里看不到，build 靠纪律点名调它）。
+- **权限 action 名**：`task → subagent`、`bash → shell`、`write/patch → edit`；v2 用有序 `permissions` 数组（后匹配者胜）。
+- **v2 没有内置 `scout`**：外部仓库/依赖研究要么用 `explore`（本机就是给它放行 `clone_repo` 补这个位），要么用 `references` 配置。
+- **v2 不跑 LSP**：接受 `lsp` 配置但不启动语言服务器、不暴露 LSP 工具、不产诊断 → 完成标准要写"项目自己的 lint/typecheck/build/test"（本机 `general.md` 已按此改）。
+- 其它：`external_directory` 默认放行（v1 会问）；终端客户端配置是 `~/.config/opencode/cli.json`（不再是 `tui.json`）；命令委派 `subtask → subagent`，且委派出去的命令在后台跑、结果报回父会话。
 
 ---
 
@@ -672,8 +686,9 @@ Stop only when the whole task is done. Every extra turn costs money.
       "model": "opencode-go/deepseek-v4.1-flash"
     },
     "sage": {
-      "mode": "all",
+      "mode": "subagent",
       "description": "Read-only senior advisor. Owns the team's judgment, world knowledge and approach specification: returns the decision-complete plan for how the work should be built (options, tradeoffs, one recommendation), and diagnoses failures that resisted other approaches.",
+      "hidden": true,
       "model": "opencode-go/glm-5.3"
     },
     "browse": {
