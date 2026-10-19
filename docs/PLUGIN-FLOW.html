@@ -109,7 +109,7 @@
   <tr><th style="width:130px">角色</th><th style="width:70px">字符</th><th>这份说明书讲什么</th></tr>
   <tr><td>build（主编排）</td><td>10707</td><td>怎么分活：自己干 / 派出去 / 找专家；路由表；6 段委派契约；便宜活别用贵模型</td></tr>
   <tr><td>plan</td><td>4470</td><td>只做计划、绝不动手；计划要"别人照着做不用再问"</td></tr>
-  <tr><td>explore</td><td>2459</td><td>只回压缩摘要 + 文件行号锚点，禁止搬原文</td></tr>
+  <tr><td>explore</td><td>2331</td><td>在原生"搜索"角色之上补"讲清楚机制"：深读全链路 → 压缩成 digest + 行号锚点；唯一写例外是 <code>clone_repo</code>（克隆到本机缓存），绝对路径/只读/并行由原生搜索提示词负责</td></tr>
   <tr><td>expert</td><td>3292</td><td>只出主意不动手；给一个推荐而不是选项清单</td></tr>
   <tr><td>general</td><td>1153</td><td>最小改动、贴真实输出、做完即停</td></tr>
   <tr><td>browse</td><td>2952</td><td>像人一样上网；每条结论带网址 + 选择器 + 引文</td></tr>
@@ -138,7 +138,7 @@
   <tr><td>build <code>&lt;verify&gt;</code> <span class="red">（已移出）</span></td><td>"should pass" is not verification … **NO EVIDENCE = NOT COMPLETE.**（2026-10-18 从 build 说明书移出，改放用户的 AGENTS.md）</td></tr>
   <tr><td>general <code>&lt;verification&gt;</code></td><td>Done means: lsp_diagnostics clean … AND the relevant build/test command actually ran with output shown. "Should work" is not done.</td></tr>
   <tr><td>plan <code>&lt;planning_standard&gt;</code></td><td>Every step carries its own verification. "Should work" is not a check.</td></tr>
-  <tr><td>explore <code>&lt;success_criteria&gt;</code> / <code>&lt;failure_conditions&gt;</code></td><td>路径必须绝对、关键结论必须带行号；调用方还得追问就算失败</td></tr>
+  <tr><td>explore <code>&lt;success_criteria&gt;</code> / <code>&lt;failure_conditions&gt;</code></td><td>关键结论必须带行号；漏掉明显匹配／调用方还得追问就算失败（绝对路径、只读、并行由原生搜索提示词负责）</td></tr>
   <tr><td>expert <code>&lt;consultation_rules&gt;</code></td><td>每个判断都要有依据（引用你亲自看过的文件路径）</td></tr>
   <tr><td>browse <code>&lt;failure_conditions&gt;</code></td><td>结论没锚点／把错误页当数据／该交配方却硬啃 → 算失败</td></tr>
 </table>

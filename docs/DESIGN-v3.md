@@ -331,3 +331,4 @@ context_usage · system_time · clone_repo · handoff · profile（**不新增 t
 5. **prompt 钩子识别自己的注入**：`isPluginInjectedText()`（契约块 / 续跑块）直接跳过，否则刚注入的契约会被当成"用户插话"，把刚进入的账本打成暂停。
 6. **同一批的其他清理**：`_shared.md` 已删（各角色说明书自带完成标准）；Dead 字段 `toolLoopWarn` 已从类型、默认值与 profile 中删除；`clone_repo` 增加 url/ref 参数注入防护（`--`、`--detach`、字符集与首字符校验 + 纯函数 `isSafeGitUrl`/`isSafeGitRef`）。
 7. **子代理 `description` 只写能力**，不写"什么时候用我"——"什么时候用谁"只在 build 的 `<routing_table>` 与 `<expert_policy>` 里。（`plan` 归 OpenCode 原生，不动。）
+8. **与原生提示词的分工**（实测 `opencode debug agents` + 扫 `opencode.exe`）：原生给 build 的提示词带 Communication/Truthfulness/**Verification**/Preciseness/Tool-Use 五节，给 explore 的提示词已含"只读、绝对路径、并行"，给 plan 的 `opencode.plan` 代理自带 `edit:deny` 权限与 Plan-mode 提醒。据此把 `explore.md` 去重（删掉与原生重复的绝对路径/只读/并行措辞），并**显式覆盖**一处与原生相抵的表述：原生"不得创建任何文件"会让 `clone_repo`（克隆到本机缓存）变成违规，故新增 `<write_exception>` 声明它是唯一被授权的写动作。build/plan 的纪律块与原生不重复，保持不动。
