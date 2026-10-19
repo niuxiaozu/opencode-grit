@@ -33,7 +33,7 @@
 |---|---|---|---|---|
 | OpenCode CLI V2 | 整个运行时/服务/TUI | npm 全局 `@opencode/cli` | `C:\Users\Administrator\AppData\Roaming\npm` | `npm i -g @opencode/cli` |
 | OpenChamber | OpenCode 的图形前端（可选） | 你已有的安装 | 本机未装（新机器已装） | 用你现有的装法；它读同一份 `~/.config/opencode` |
-| **grit** | 六代理多代理套件 + ULW 持续工作模式 + profile 分档 | GitHub `niuxiaozu/opencode-grit`（分支 `opencode-v2`） | 仓库 `D:\workspace\selfProjects\agent-worktemp\grit`；部署 `~/.config/opencode/{plugins/grit.ts, plugins/grit-tui/tui.ts, grit/, scripts/, commands/}` | `git clone -b opencode-v2` → `npm i` → `node scripts/install.mjs` |
+| **grit** | 五代理多代理套件（build/explore/general/expert/browse）+ ULW 持续工作模式 + profile 分档 | GitHub `niuxiaozu/opencode-grit`（分支 `opencode-v2`） | 仓库 `D:\workspace\selfProjects\agent-worktemp\grit`；部署 `~/.config/opencode/{plugins/grit.ts, plugins/grit-tui/tui.ts, grit/, scripts/, commands/}` | `git clone -b opencode-v2` → `npm i` → `node scripts/install.mjs` |
 | **opencode-worktime** | 定时暂停/恢复会话、定时发消息；模型工具 `worktime_*` | GitHub `niuxiaozu/opencode-worktime`（分支 `opencode-v2`） | 仓库 `D:\workspace\selfProjects\agent-worktemp\opencode-worktime`；部署 `~/.config/opencode/plugins/opencode-worktime.ts` + `~/.worktime/worktime.json` | `git clone -b opencode-v2` → `powershell -File scripts/install.ps1` |
 | **secret-redact** | 把金库里的密钥值从每次请求里抹掉（防泄漏给模型/日志） | 本机自研（无仓库） | `~/.config/opencode/plugins/secret-redact.ts` | 粘贴附录 B-1 |
 | **secret-ui** | TUI 里敲 `/secret <名字>` 安全录入密钥；给模型一个 `secret_list` 工具（只列名字） | 本机自研（无仓库） | `~/.config/opencode/plugins/secret-ui/{index.ts,tui.ts}` | 粘贴附录 B-2、B-3 |
@@ -52,7 +52,7 @@
 C:\Users\Administrator\
 ├─ .config\opencode\                 ← 环境核心（≈130MB，主要是 node_modules）
 │  ├─ AGENTS.md                      总是生效的规则：成本纪律 + 文风 + 密钥红线
-│  ├─ opencode.json                  主配置：shell、权限、MCP、plugins、6 条 agents 记录
+│  ├─ opencode.json                  主配置：shell、权限、MCP、plugins、5 条 agents 记录
 │  ├─ opencode-mem.jsonc             记忆插件配置
 │  ├─ package.json / package-lock.json  plugins/*.ts 的运行时依赖（@opencode/plugin）
 │  ├─ service.json                   本机服务口令（机器本地；别外传，见 §6）
@@ -98,7 +98,7 @@ D:\workspace\selfProjects\agent-worktemp\
 | OpenCode CLI | **v2.0.25**（npm 全局 `@opencode/cli`） |
 | 插件运行时依赖 | `@opencode/plugin ^2.0.20`（装在 `~/.config/opencode/node_modules`） |
 | 已登录的模型 provider（`opencode auth list`） | OpenCode Go / DeepSeek / Zhipu AI Coding Plan（三个都是 stored） |
-| grit 当前档（`grit/profiles/active`） | `opencode-go`：build/explore/general/browse = `opencode-go/deepseek-v4.1-flash`，plan/expert = `opencode-go/glm-5.3` |
+| grit 当前档（`grit/profiles/active`） | `opencode-go`：build/explore/general/browse = `opencode-go/deepseek-v4.1-flash`，expert = `opencode-go/glm-5.3`（plan 归原生，不映射） |
 | bsk | 0.2.0 |
 | OpenSCAD | **本机未安装**（技能里写的是 `C:\Program Files\OpenSCAD\openscad.exe`，新机器要装） |
 | 记忆插件 | `opencode-mem`（embedding 用 `Xenova/nomic-embed-text-v1`，本地推理） |
@@ -110,7 +110,7 @@ D:\workspace\selfProjects\agent-worktemp\
 
 ### 2.1 一句话
 
-用 OpenCode V2 原生的能力（插件、agents、commands、skills、MCP）**轻量地**搭出一支"六人小队"：一个编排者（build）在便宜模型上干活，遇到难判断才升级到贵模型（expert/plan），搜索靠 explore 压缩摘要，动手靠 general，上网靠 browse，云端不要一键全自动、而是**用户说一句干完一整个阶段**。
+用 OpenCode V2 原生的能力（插件、agents、commands、skills、MCP）**轻量地**搭出一支"五人小队"：一个编排者（build）在便宜模型上干活，遇到难判断才升级到贵模型（expert），需要"只讨论计划"时手动切到 OpenCode 原生 plan 模式；搜索靠 explore 压缩摘要，动手靠 general，上网靠 browse，云端不要一键全自动、而是**用户说一句干完一整个阶段**。
 
 ### 2.2 ULW 持续工作模式（这套环境的核心体验）
 
@@ -124,12 +124,11 @@ D:\workspace\selfProjects\agent-worktemp\
 - 护栏：2 秒倒计时让人有机会插话、指数退避、连败暂停、原地打转停止、工具死循环停止、推送预算上限、上下文占比过高不推。
 - 不依赖 todo 工具（V2 没有），进度靠模型自己维护。
 
-### 2.3 六代理与分档
+### 2.3 五代理与分档（+ 原生 plan）
 
 | 代理 | 干什么 | 本机档位（opencode-go） |
 |---|---|---|
 | build | 编排：自己干 / 派活 / 升级 / 分档 | deepseek-v4.1-flash（便宜档） |
-| plan | 只出计划，绝不动手 | glm-5.3（贵档） |
 | explore | 只读搜索，回摘要 + 文件行号锚点 | deepseek-v4.1-flash |
 | expert | 只读顾问：难判断、高风险改动复审 | glm-5.3 |
 | general | 多步执行 | deepseek-v4.1-flash |
@@ -137,7 +136,7 @@ D:\workspace\selfProjects\agent-worktemp\
 
 分档靠 `profiles/*.json`（改 `agents` 记录里的 model 与权限），`opencode-go` 是日常档；切档用 `/profile <名字>`（会话内）或终端 `grit profile <名字>`，v2 监视配置目录，约 3 秒热生效（当前会话已选的模型不变）。
 
-**子代理描述只写"能干什么"**：`agents/index.json` 里的 `description` 只陈述能力，不写"什么时候用我"——"什么时候用谁"只写在 build 的路由表（`contracts/discipline/build.md` 的 `<routing_table>`）与 `<expert_policy>` 里，避免子代理自我推销导致乱派活。`plan` 归 OpenCode 原生，不在这套改写范围内。
+**子代理描述只写"能干什么"**：`agents/index.json` 里的 `description` 只陈述能力，不写"什么时候用我"——"什么时候用谁"只写在 build 的路由表（`contracts/discipline/build.md` 的 `<routing_table>`）与 `<expert_policy>` 里，避免子代理自我推销导致乱派活。`plan` 是 OpenCode 原生只读模式（`opencode.plan`，自带 `edit:deny` 权限与 Plan-mode 提醒）：grit 不物化它的记录、不注入纪律，用户手动切到 plan 就用原生那套。
 
 ### 2.4 规则与优先级
 
@@ -220,7 +219,7 @@ mkdir $cfg, "$cfg\plugins", "$cfg\commands", "$cfg\skills", "$cfg\agents", "$cfg
 | 文件 | 附录 | 说明 |
 |---|---|---|
 | `AGENTS.md` | A-1 | 规则（成本纪律/文风/密钥红线） |
-| `opencode.json` | A-2 | 主配置（权限、plugins、agents 记录；`agents` 那 6 条稍后由 grit 安装脚本重写） |
+| `opencode.json` | A-2 | 主配置（权限、plugins、agents 记录；`agents` 那 5 条稍后由 grit 安装脚本重写） |
 | `opencode-mem.jsonc` | A-3 | 记忆配置 |
 | `package.json` | A-4 | 插件运行时依赖宿主 |
 
@@ -239,7 +238,7 @@ npm install
 node scripts/install.mjs
 ```
 
-这个脚本会：把 `plugin/grit.ts`、`plugin/tui.ts`、`contracts/`、`profiles/`、`variants/`、`agents/index.json`、`scripts/`、`commands/` 同步进 `~/.config/opencode`（并清理陈旧残留），然后按 `grit/profiles/active` 把 **6 条 agents 记录**写进 `opencode.json`（只写 mode/description/model/permissions，绝不写 system）。
+这个脚本会：把 `plugin/grit.ts`、`plugin/tui.ts`、`contracts/`、`profiles/`、`variants/`、`agents/index.json`、`scripts/`、`commands/` 同步进 `~/.config/opencode`（并清理陈旧残留），然后按 `grit/profiles/active` 把 **5 条 agents 记录**写进 `opencode.json`（只写 mode/description/model/permissions，绝不写 system）。
 
 验证：
 
@@ -422,7 +421,7 @@ node "C:\Users\Administrator\.config\opencode\scripts\grit.mjs" %*
 | 交接摘要模板 | `grit\contracts\handoff-template.md`（同时要同步 `commands/handoff.md` 里的内嵌副本） |
 | 全局规则（成本/文风/密钥） | `~\.config\opencode\AGENTS.md` |
 | 档位/模型/权限 | `~\.config\opencode\grit\profiles\<档>.json` |
-| 工具清单/agent 描述 | grit 仓库 `agents/index.json` + `profiles/*`，重跑 `node scripts/install.mjs`（描述只写能力，不写"什么时候用我"；plan 归原生不动） |
+| 工具清单/agent 描述 | grit 仓库 `agents/index.json` + `profiles/*`，重跑 `node scripts/install.mjs`（描述只写能力，不写"什么时候用我"；plan 是原生模式，不在名册里） |
 
 > 改仓库里的东西要**从仓库改**（改完 `node scripts/install.mjs` 同步）——直接改 `~\.config\opencode` 里那份，下次安装会被覆盖。
 
@@ -635,11 +634,6 @@ Stop only when the whole task is done. Every extra turn costs money.
         },
         {
           "action": "subagent",
-          "resource": "plan",
-          "effect": "allow"
-        },
-        {
-          "action": "subagent",
           "resource": "explore",
           "effect": "allow"
         },
@@ -659,11 +653,6 @@ Stop only when the whole task is done. Every extra turn costs money.
           "effect": "allow"
         }
       ]
-    },
-    "plan": {
-      "mode": "primary",
-      "description": "Planning consultant — read-only, never implements. Produces decision-complete plans another agent can execute without re-interviewing the user.",
-      "model": "opencode-go/glm-5.3"
     },
     "explore": {
       "mode": "subagent",
@@ -1517,8 +1506,8 @@ grit/
 ├─ plugin/tui.ts            TUI 提示插件（profile 切换 toast）
 ├─ contracts/ulw.md         ULW 契约（可改）
 ├─ contracts/handoff-template.md  交接摘要模板
-├─ contracts/discipline/*.md      六份角色纪律（可改）
-├─ agents/index.json        六席的定义（mode/description/permissions）
+├─ contracts/discipline/*.md      五份角色纪律（可改；plan 归原生，无文件）
+├─ agents/index.json        五席的定义（mode/description/permissions；plan 不在名册）
 ├─ profiles/*.json          档位：opencode-go / default / deepseek / glm-max / strict / bare
 ├─ profiles/active          当前档指针
 ├─ variants/strict/discipline/build.md   严格档的纪律变体
@@ -1625,7 +1614,7 @@ grit/
 | bsk | 0.2.0 |
 | grit 仓库分支 / origin | `opencode-v2` / github.com/niuxiaozu/opencode-grit |
 | worktime 仓库分支 / origin | `opencode-v2` / github.com/niuxiaozu/opencode-worktime |
-| 当前档 | `opencode-go`（build/explore/general/browse=opencode-go/deepseek-v4.1-flash；plan/expert=opencode-go/glm-5.3） |
+| 当前档 | `opencode-go`（build/explore/general/browse=opencode-go/deepseek-v4.1-flash；expert=opencode-go/glm-5.3；plan 归原生、不映射） |
 | 部署副本与仓库一致性 | `plugins/grit.ts` 与仓库 `plugin/grit.ts` 哈希一致（`node scripts/install.mjs` 保证） |
 | 冒烟基线 | `npx tsc --noEmit` 干净；`node harness/smoke.ts` 全过 |
 | 密钥名字（值不在此） | `caddy.basic`、`router.admin`、`canary.value` |

@@ -32,7 +32,7 @@ const legacyDataRoot = join(cfgDir, "omo-lite")
 
 const AGENT_NAMES = ["build", "plan", "explore", "general", "expert", "browse"]
 /** 曾被 grit 托管、现已移除的席位（安装时一并清除，避免残留）。 */
-const REMOVED_AGENT_NAMES = ["factory"]
+const REMOVED_AGENT_NAMES = ["factory", "plan"]
 const COMMAND_FILES = ["ulw.md", "ulw-exit.md", "handoff.md", "profile.md"]
 /** 旧命令名（改名后清理部署残留）。 */
 const LEGACY_COMMAND_FILES = ["stop-continuation.md"]

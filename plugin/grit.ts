@@ -13,7 +13,7 @@
  *     - 事件事实（按安装版 @opencode/schema 2.0.20 的 event-manifest 逐条核对）：有 session.idle、
  *       有 session.execution.*，**没有 session.error**（那是 v1 事件）⇒ abort / 上下文超限护栏
  *       必须走 session.execution.interrupted / .failed，不能走 session.error。
- *   ctx.tool.transform                 → 5 工具（context_usage/system_time/clone_repo/handoff/profile）
+ *   ctx.tool.transform                 → 7 工具（context_usage/system_time/clone_repo/handoff/profile/ulw_enter/ulw_exit）
  *
  * 【v3 关键约束（实验证据，见 docs/DESIGN-v3.md §11）】
  *   - 不设 agent.system：md/配置记录里写 system 会【整段替换】基础提示词并跳过 provider 变体与
@@ -54,9 +54,14 @@ import {
 
 // ===================== 常量与哨兵 =====================
 
-const AGENT_NAMES = ["build", "plan", "explore", "general", "expert", "browse"]
-/** 曾被 grit 托管、现已移除的席位（安装/切换时一并从 opencode.json 清除，避免残留）。 */
-const REMOVED_AGENT_NAMES = ["factory"]
+/**
+ * grit 托管的席位。`plan` 不在此列：它是 OpenCode 原生的只读 plan 模式（`opencode.plan`，
+ * 自带 edit:deny 权限与 Plan-mode 提醒），不注入纪律、不物化 agents 记录、不参与动态注入。
+ */
+const AGENT_NAMES = ["build", "explore", "general", "expert", "browse"]
+/** 曾被 grit 托管、现已移除的席位（安装/切换时一并从 opencode.json 清除，避免残留）。
+ *  `plan` 交回 OpenCode 原生 plan 模式：不写记录，原生身份/权限/描述才不会被我们覆盖。 */
+const REMOVED_AGENT_NAMES = ["factory", "plan"]
 /** /ulw 命令携带的授权标识：ulw_enter 校验「上一条用户消息」是否含它，无则拒绝进入。 */
 const ULW_AUTH_TOKEN = "[GRIT:ULW:START]"
 const SENTINEL_EXIT = "[GRIT:ULW:EXIT]"

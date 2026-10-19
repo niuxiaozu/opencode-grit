@@ -3,7 +3,6 @@
   "description": "OpenCode Go 档：build/explore/general/browse=deepseek-v4.1-flash（傻快主力）；plan/expert=glm-5.3（前沿档）",
   "model": {
     "build": "opencode-go/deepseek-v4.1-flash",
-    "plan": "opencode-go/glm-5.3",
     "explore": "opencode-go/deepseek-v4.1-flash",
     "general": "opencode-go/deepseek-v4.1-flash",
     "expert": "opencode-go/glm-5.3",
@@ -13,7 +12,6 @@
   "permissions": {
     "build": [
       { "action": "subagent", "resource": "*", "effect": "deny" },
-      { "action": "subagent", "resource": "plan", "effect": "allow" },
       { "action": "subagent", "resource": "explore", "effect": "allow" },
       { "action": "subagent", "resource": "general", "effect": "allow" },
       { "action": "subagent", "resource": "expert", "effect": "allow" },

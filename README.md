@@ -18,8 +18,8 @@
 | 哨兵统一为 **`GRIT:ULW:*`**（自解释） | 旧 `grit:done:v1` 这类 `动作:v1` 单看无含义；现为「命名空间:模式:动作」 |
 | 机制 B **不再扫描 todo**，完成由模型自判（调用 `ulw_exit`） | v2 **已删除 todowrite 工具**（官方：拖慢 agent）；grit 不重做 todo |
 | **移除校准段机制** | 校准段难编写，且与 OpenCode 原生提示词机制冗余/冲突；交由原生机制承担，grit 不再注入 |
-| `plan` 回归 **OpenCode 原生 primary 模式** | 去掉与 expert 重叠的自建可委派 plan 子代理 |
-| 名册 **6 席**（移除 `factory`） | 造数/测试工作由 `general` 直接承担，不再单设席位 |
+| `plan` 交回 **OpenCode 原生 plan 模式** | 用户手动切到 plan 才用它；grit 不再物化它的记录、不注入纪律（原生自带 `edit:deny` 权限与 Plan-mode 提醒已经够） |
+| 名册 **5 席**（`plan` 交回原生；早前已移除 `factory`） | 造数/测试工作由 `general` 直接承担，不再单设席位 |
 
 > **验证状态（2026-10-16 复审）**：`npx tsc --noEmit` 干净、`npm test`（`harness/smoke.ts`）全绿（DESIGN-v3 §11 的 V-9 已过）；V-4（省略 system 后 explore 内置提示词保留）、V-7（合成消息）、V-8（provider 作用域）**仍未做活体实测**——本表相关结论按「设计依据」读，不当「已验证」。
 > 机制事实已按**安装版** `@opencode/schema` 2.0.20 的类型与事件清单核对（要点：v2 有 `session.idle`，**没有** `session.error`）。
@@ -28,9 +28,9 @@
 
 | 层 | 内容 | 说明 |
 |---|---|---|
-| 代理层 | 6 席（`agents/index.json` 定义 → opencode.json `agents` 记录） | build（主编排）/ plan（原生 primary）/ explore（只读检索 + 放行 clone_repo）/ general（并行执行）/ expert（决策与知识权威）/ **browse（浏览器代理）**。model/permissions 由 profile 物化 |
+| 代理层 | 5 席（`agents/index.json` 定义 → opencode.json `agents` 记录） | build（主编排）/ explore（只读检索 + 放行 clone_repo）/ general（并行执行）/ expert（决策与知识权威）/ **browse（浏览器代理）**。model/permissions 由 profile 物化。`plan` 不在名册里——它是 OpenCode 原生只读 plan 模式，用户手动切换使用 |
 | 命令层 | `/ulw` `/ulw-exit` `/handoff` `/profile` | 原生斜杠命令。**命令正文只含哨兵 + 用户参数**（不混入 grit 模板文字）；指令由带标签块 `<grit-inject>` 注入**消息通道**（`/ulw-exit` 首行哨兵由插件识别，`/ulw` 按真实用户消息处理） |
-| 契约层 | `contracts/ulw.md` + `contracts/discipline/*.md`（6 席各一份）+ `handoff-template.md` | 纪律正文外置；**运行时**追加，改文件即改纪律（无需重启）。注：原先还有一份共用的完成纪律 `_shared.md`，已于 2026-10-18 删除（那类"完成标准/不许删改判据"的强制规范归 ULW 模式，由契约承担） |
+| 契约层 | `contracts/ulw.md` + `contracts/discipline/*.md`（5 席各一份）+ `handoff-template.md` | 纪律正文外置；**运行时**追加，改文件即改纪律（无需重启）。注：原先还有一份共用的完成纪律 `_shared.md`，已于 2026-10-18 删除（那类"完成标准/不许删改判据"的强制规范归 ULW 模式，由契约承担） |
 | profile 层 | `profiles/{default,opencode-go,deepseek,glm-max,strict,bare}.json` + `active` 指针 | 模型映射/纪律变体/行为参数/权限/机制开关，一键切换 |
 | 插件层 | `plugins/grit.ts` 单文件 | 四机制 + 七工具，纯函数决策核 |
 

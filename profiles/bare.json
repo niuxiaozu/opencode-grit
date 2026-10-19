@@ -3,7 +3,6 @@
   "description": "纯净模式：全机制关，只剩工具箱（救火用）",
   "model": {
     "build": "zhipuai-coding-plan/glm-5.3-flash",
-    "plan": "zhipuai-coding-plan/glm-5.3",
     "explore": "zhipuai-coding-plan/glm-5.3-flash",
     "general": "zhipuai-coding-plan/glm-5.3-flash",
     "expert": "zhipuai-coding-plan/glm-5.3",

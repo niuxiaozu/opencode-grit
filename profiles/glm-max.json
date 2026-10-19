@@ -3,7 +3,6 @@
   "description": "贵档全量：build/plan/expert 用 glm-5.3",
   "model": {
     "build": "zhipuai-coding-plan/glm-5.3",
-    "plan": "zhipuai-coding-plan/glm-5.3",
     "explore": "zhipuai-coding-plan/glm-5.3-flash",
     "general": "zhipuai-coding-plan/glm-5.3-flash",
     "expert": "zhipuai-coding-plan/glm-5.3",
@@ -13,7 +12,6 @@
   "permissions": {
     "build": [
       { "action": "subagent", "resource": "*", "effect": "deny" },
-      { "action": "subagent", "resource": "plan", "effect": "allow" },
       { "action": "subagent", "resource": "explore", "effect": "allow" },
       { "action": "subagent", "resource": "general", "effect": "allow" },
       { "action": "subagent", "resource": "expert", "effect": "allow" },

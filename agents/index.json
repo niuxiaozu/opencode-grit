@@ -3,10 +3,6 @@
     "mode": "primary",
     "description": "Orchestrator agent. Splits work into independent units, delegates to subagents, integrates their results, and implements small changes directly."
   },
-  "plan": {
-    "mode": "primary",
-    "description": "Planning consultant — read-only, never implements. Produces decision-complete plans another agent can execute without re-interviewing the user."
-  },
   "explore": {
     "mode": "subagent",
     "description": "Read-only search agent. Locates code and configuration across the project and installed dependency source, then returns a condensed digest with absolute paths and line anchors.",

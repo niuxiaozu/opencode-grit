@@ -85,7 +85,7 @@
 <h2>§1 对 Agent 的 9 个动作（含注入原文）</h2>
 <table>
   <tr><th style="width:150px">什么时候</th><th style="width:110px">塞到哪</th><th style="width:230px">动作</th><th>一句话作用</th></tr>
-  <tr><td>每次要发模型请求</td><td><span class="badge b-sys">系统提示词末尾</span></td><td>贴当前角色的<b>纪律块</b>（已有就不贴）</td><td>告诉这个角色该干什么、别干什么（六份说明书，各一份）</td></tr>
+  <tr><td>每次要发模型请求</td><td><span class="badge b-sys">系统提示词末尾</span></td><td>贴当前角色的<b>纪律块</b>（已有就不贴；只对 grit 五席，原生 plan 不贴）</td><td>告诉这个角色该干什么、别干什么（五份说明书，各一份）</td></tr>
   <tr><td>每次要发模型请求</td><td><span class="badge b-msg">消息尾巴</span></td><td>模式中 → <b>每轮一行标记</b></td><td>小声提醒「还在模式里、目标是这个、做完调 ulw_exit」（契约本身不再重贴）</td></tr>
   <tr><td>你敲了 /ulw 但还没进模式</td><td><span class="badge b-msg">消息尾巴</span></td><td>贴<b>催办块</b></td><td>催模型马上调 <code>ulw_enter</code> 并报目标</td></tr>
   <tr><td>退出后的下一次请求组装</td><td><span class="badge b-msg">消息尾巴</span></td><td>贴<b>模式已关提醒</b>（只贴一次）</td><td>账本里有「待贴」标记才贴；不再看用户消息里的暗号</td></tr>
@@ -101,14 +101,13 @@
 <p class="tiny">形状固定，外面包一层标签；内容 = 该角色的说明书（+ 档里指定的变体）；共用完成纪律已于 2026-10-18 删除。</p>
 <pre>&lt;GRIT-DISCIPLINE agent="build"&gt;
 [GRIT:DISCIPLINE:build]
-&lt;role&gt;You are the build orchestrator of a six-agent team. … &lt;/role&gt;
+&lt;role&gt;You are the build orchestrator of a five-agent team (build, explore, general, expert, browse). … &lt;/role&gt;
 &lt;routing_table&gt; … &lt;/routing_table&gt;
 … &lt;/hard_blocks&gt;
 &lt;/GRIT-DISCIPLINE&gt;</pre>
 <table>
   <tr><th style="width:130px">角色</th><th style="width:70px">字符</th><th>这份说明书讲什么</th></tr>
-  <tr><td>build（主编排）</td><td>10707</td><td>怎么分活：自己干 / 派出去 / 找专家；路由表；6 段委派契约；便宜活别用贵模型</td></tr>
-  <tr><td>plan</td><td>4470</td><td>只做计划、绝不动手；计划要"别人照着做不用再问"</td></tr>
+  <tr><td>build（主编排）</td><td>6873</td><td>怎么分活：自己干 / 派出去 / 找专家；路由表；6 段委派契约；便宜活别用贵模型</td></tr>
   <tr><td>explore</td><td>2331</td><td>在原生"搜索"角色之上补"讲清楚机制"：深读全链路 → 压缩成 digest + 行号锚点；唯一写例外是 <code>clone_repo</code>（克隆到本机缓存），绝对路径/只读/并行由原生搜索提示词负责</td></tr>
   <tr><td>expert</td><td>3292</td><td>只出主意不动手；给一个推荐而不是选项清单</td></tr>
   <tr><td>general</td><td>1153</td><td>最小改动、贴真实输出、做完即停</td></tr>
@@ -118,7 +117,7 @@
 <h4>build 说明书里的 5 个段落（2026-10-18 瘦身后：verify/tone/hard_blocks 移出、search_rule 并入表格）</h4>
 <table>
   <tr><th style="width:150px">段落</th><th style="width:70px">字符</th><th>讲什么</th><th style="width:140px">这次会话用到了吗</th></tr>
-  <tr><td><code>&lt;role&gt;</code></td><td>246</td><td>你是六人团队的编排者；自己干更快更便宜就自己干</td><td>一直生效</td></tr>
+  <tr><td><code>&lt;role&gt;</code></td><td>354</td><td>你是五人团队（build/explore/general/expert/browse）的编排者，plan 是 OpenCode 原生只读模式；自己干更快更便宜就自己干</td><td>一直生效</td></tr>
   <tr><td><code>&lt;routing_table&gt;</code></td><td>3939</td><td>派活对照表（含成本分档：便宜 1×／中 5×／贵 20×）；2026-10-18 把 <code>&lt;search_rule&gt;</code> 的两条独有规则并了进来（要改的代码自己读、什么时候停止搜索），三行 browse 并成一行，"严重卡壳"那行补上"且你说不出原因"</td><td>一直在用</td></tr>
   <tr><td><code>&lt;delegation_contract&gt;</code></td><td>1368</td><td>派活时提示词必须含 6 段（任务／期望结果／可用工具／必须做／不许做／背景），后面跟一个"错例 vs 对例"的示例块</td><td>派 browse 时用了</td></tr>
   <tr><td><code>&lt;expert_policy&gt;</code></td><td>795</td><td>四条判定标准：① 事实能在仓库／任务／实验里找到就自己查；② 含糊且后果重才咨询，且只咨询一次（带上用户原话）；③ 产品口味类问题问用户、不问专家；④ 执行类难题升级门槛三条合取</td><td class="red">已瘦身（3168 → 795）</td></tr>
@@ -131,13 +130,12 @@
 - V3 multi-file / delegated work: read every touched file, run build/tests yourself.
 **NO EVIDENCE = NOT COMPLETE.** A completion claim must point at real output.</pre>
 
-<h4>② 那份共用"完成纪律"和六份说明书的关系（判断要不要留的依据）</h4>
-<p class="tiny">六份说明书<b>各自都已经带了自己的完成/质量标准</b>，② 有很大一部分是重复的：</p>
+<h4>② 那份共用"完成纪律"和五份说明书的关系（判断要不要留的依据）</h4>
+<p class="tiny">五份说明书<b>各自都已经带了自己的完成/质量标准</b>，② 有很大一部分是重复的：</p>
 <table>
   <tr><th style="width:230px">角色说明书自带的段落</th><th>里面的原话</th></tr>
   <tr><td>build <code>&lt;verify&gt;</code> <span class="red">（已移出）</span></td><td>"should pass" is not verification … **NO EVIDENCE = NOT COMPLETE.**（2026-10-18 从 build 说明书移出，改放用户的 AGENTS.md）</td></tr>
   <tr><td>general <code>&lt;verification&gt;</code></td><td>Done means: lsp_diagnostics clean … AND the relevant build/test command actually ran with output shown. "Should work" is not done.</td></tr>
-  <tr><td>plan <code>&lt;planning_standard&gt;</code></td><td>Every step carries its own verification. "Should work" is not a check.</td></tr>
   <tr><td>explore <code>&lt;success_criteria&gt;</code> / <code>&lt;failure_conditions&gt;</code></td><td>关键结论必须带行号；漏掉明显匹配／调用方还得追问就算失败（绝对路径、只读、并行由原生搜索提示词负责）</td></tr>
   <tr><td>expert <code>&lt;consultation_rules&gt;</code></td><td>每个判断都要有依据（引用你亲自看过的文件路径）</td></tr>
   <tr><td>browse <code>&lt;failure_conditions&gt;</code></td><td>结论没锚点／把错误页当数据／该交配方却硬啃 → 算失败</td></tr>
@@ -148,7 +146,7 @@
 
 <details><summary>② 共用完成纪律 —— <span class="red">已于 2026-10-18 整体删除</span><span class="src">原文件 contracts/discipline/_shared.md</span></summary>
 <p class="tiny">删除理由（你的判断）：这类"补录、删改、测试判据、完成标准"的强制规范属于 <b>ULW 模式</b>——那是你主动开启、要模型严格按标准交付时才该上的紧箍咒；<b>不开 ULW 的正常工作</b>，让模型按任务自己处理就好，不必常驻强制规范。</p>
-<p class="tiny">删掉之后没有角色会"失去完成标准"：六份说明书各自都带了自己的那一份（<code>&lt;verify&gt;</code> / <code>&lt;verification&gt;</code> / <code>&lt;planning_standard&gt;</code> / <code>&lt;success_criteria&gt;</code> / <code>&lt;consultation_rules&gt;</code> / <code>&lt;failure_conditions&gt;</code>）。ULW 开启时，同样内容由契约【2 双证据】【5 零容忍】【6 完成判定】承担。</p>
+<p class="tiny">删掉之后没有角色会"失去完成标准"：五份说明书各自都带了自己的那一份（<code>&lt;verify&gt;</code>... 现为 build <code>&lt;routing_table&gt;</code> 尾注、general <code>&lt;verification&gt;</code>、explore <code>&lt;success_criteria&gt;</code> / <code>&lt;failure_conditions&gt;</code>、expert <code>&lt;consultation_rules&gt;</code>、browse <code>&lt;failure_conditions&gt;</code>）。ULW 开启时，同样内容由契约【2 双证据】【5 零容忍】【6 完成判定】承担。</p>
 <p class="tiny">实现上：插件读不到这个文件就自动跳过（<code>readText(...) ?? ""</code>），不需要改代码；安装脚本已把部署里那份一并清除。</p>
 <details><summary>留档：删除前的原文（5 条）</summary>
 <pre>&lt;completion_discipline&gt;
@@ -287,7 +285,7 @@ E11: { t:"工具只回一句短确认", at:"grit.ts:1005", code:'return `已进�
 
 /* ---------- 路径②：每一轮（注入纪律与标记） ---------- */
 R1: { t:"模型每次要开口之前", at:"grit.ts:1138", code:'await ctx.session.hook("context", (event) => { ... })', do:"每次组装请求都过一次；下面两段依次做。", br:[{l:"先看系统提示词", to:"R2"}] },
-R2: { t:"系统提示词里已有该角色的纪律块吗", at:"grit.ts:1143-1145", code:'if (Array.isArray(sys) && AGENT_NAMES.includes(agent)) {\n  const tag = `[GRIT:DISCIPLINE:${agent}]`\n  if (!sysHas(sys, tag)) {', do:"幂等判据就是那个标签；角色名不在六席里（起标题/压缩这类）直接跳过。", br:[{l:"没有 → 贴", to:"R3"},{l:"已有 → 不重复贴", to:"R4"}] },
+R2: { t:"系统提示词里已有该角色的纪律块吗", at:"grit.ts:1146-1148", code:'if (Array.isArray(sys) && AGENT_NAMES.includes(agent)) {\n  const tag = `[GRIT:DISCIPLINE:${agent}]`\n  if (!sysHas(sys, tag)) {', do:"幂等判据就是那个标签；角色名不在五席里（起标题/压缩这类，以及原生 plan 模式）直接跳过。", br:[{l:"没有 → 贴", to:"R3"},{l:"已有 → 不重复贴", to:"R4"}] },
 R3: { t:"贴【角色纪律块】到系统提示词末尾", at:"grit.ts:1146-1147", code:'const content = readDiscipline(agent)   // 该角色说明书（+ 档里指定的变体；共用完成纪律已于 2026-10-18 删除）\nif (content) sys.push({ type: "text", text: disciplineBlock(agent, content) })', do:"内容固定、位置固定 ⇒ 前缀缓存不受影响。原文见 §1-①。", br:[{l:"继续", to:"R4"}] },
 R4: { t:"是不是真实干活的回合", at:"grit.ts:1159", code:"if (!AGENT_NAMES.includes(agent)) return   // 辅助请求不带 agent", do:"起标题、压缩上下文这类请求不带角色名 → 直接返回，什么都不贴。", br:[{l:"否 → 结束", to:null},{l:"是", to:"R5"}] },
 R5: { t:"账本已激活吗", at:"grit.ts:1167-1169", code:"if (st && st.active && st.stopReason === null) {", do:"", br:[{l:"是 → 贴每轮标记", to:"R9"},{l:"否（含刚退出）", to:"R6"}] },

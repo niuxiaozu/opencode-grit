@@ -3,7 +3,6 @@
   "description": "DeepSeek 档：build/explore/general/browse=deepseek-flash（傻快主力）；plan/expert=glm-5.3（前沿档）",
   "model": {
     "build": "deepseek/deepseek-flash",
-    "plan": "zhipuai-coding-plan/glm-5.3",
     "explore": "deepseek/deepseek-flash",
     "general": "deepseek/deepseek-flash",
     "expert": "zhipuai-coding-plan/glm-5.3",
@@ -13,7 +12,6 @@
   "permissions": {
     "build": [
       { "action": "subagent", "resource": "*", "effect": "deny" },
-      { "action": "subagent", "resource": "plan", "effect": "allow" },
       { "action": "subagent", "resource": "explore", "effect": "allow" },
       { "action": "subagent", "resource": "general", "effect": "allow" },
       { "action": "subagent", "resource": "expert", "effect": "allow" },

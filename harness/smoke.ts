@@ -158,14 +158,15 @@ ok(all.warnings.length === 0, "无缺 model 告警")
 
 // readAgentsIndex 读真实仓库文件（交付保障）
 const realIdx = readAgentsIndex(join(import.meta.dirname ?? ".", "..", "agents", "index.json"))
-ok(Object.keys(realIdx).length === 6, `仓库 agents/index.json 含 6 席（实际 ${Object.keys(realIdx).length}）`)
+ok(Object.keys(realIdx).length === 5, `仓库 agents/index.json 含 5 席（实际 ${Object.keys(realIdx).length}）`)
 ok(!("factory" in realIdx), "已移除 factory 席")
+ok(!("plan" in realIdx), "plan 不在 grit 名册（由 OpenCode 原生 plan 模式承担）")
 
 // ===================== 8. 插件形态（V2） =====================
 console.log("[plugin shape]")
 const def = gritPlugin as unknown as { id?: unknown; setup?: unknown }
 ok(def.id === "grit" && typeof def.setup === "function", "V2 形态：id='grit' + setup")
-ok(JSON.stringify(gritPlugin.AGENT_NAMES) === JSON.stringify(["build", "plan", "explore", "general", "expert", "browse"]), "AGENT_NAMES 恰为 6 席（无 factory）")
+ok(JSON.stringify(gritPlugin.AGENT_NAMES) === JSON.stringify(["build", "explore", "general", "expert", "browse"]), "AGENT_NAMES 恰为 5 席（plan 归原生，无 factory）")
 const tmpHome = mkdtempSync(join(tmpdir(), "grit-home-"))
 mkdirSync(join(tmpHome, "agents"), { recursive: true })
 writeFileSync(join(tmpHome, "agents", "index.json"), JSON.stringify(index), "utf8")
