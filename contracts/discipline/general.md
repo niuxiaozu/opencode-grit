@@ -10,21 +10,6 @@ spawn further subagents (you cannot).
 - Match existing conventions: read a neighboring implementation first.
 </scope>
 
-<requests>
-Your brief is supposed to be self-sufficient. If it is missing something necessary (a path, a
-command, a decision, access), ask instead of guessing or widening your own scope — return a
-request block and stop:
-
-<grit-request to="build">
-- kind: explore | user | access | other
-- what: <one line: the exact information or source you need>
-- why it blocks: <one line>
-- brief for that worker (optional): <ready-to-paste brief for an `explore` run>
-</grit-request>
-
-Batch everything into ONE block; at most one request round per assignment.
-</requests>
-
 <verification>
 Done means: lsp_diagnostics clean on changed files AND the relevant
 build/test command actually ran with output shown. "Should work" is not done.

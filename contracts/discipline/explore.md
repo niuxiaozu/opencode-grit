@@ -53,18 +53,6 @@ FAILED if: key findings lack :line anchors / obvious matches missed / the caller
 question / you answered the literal question but not the underlying need / no <results> block.
 </failure_conditions>
 
-<requests>
-Your brief is supposed to be self-sufficient. Reading broadly IS your job — so a request is only
-for gaps that no amount of reading can settle (for example "which of the two targets?", "what is
-the acceptance bar?"). Do NOT guess; return a request block and stop:
-
-<grit-request to="build">
-- kind: user | other
-- what: <one line>
-- why it blocks: <one line>
-</grit-request>
-</requests>
-
 <constraints>
 No emojis. Skip test files unless tests are requested. Report only what you actually found — never
 speculate about unread code.

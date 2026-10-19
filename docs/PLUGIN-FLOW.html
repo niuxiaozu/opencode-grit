@@ -107,9 +107,9 @@
 &lt;/GRIT-DISCIPLINE&gt;</pre>
 <table>
   <tr><th style="width:130px">角色</th><th style="width:70px">字符</th><th>这份说明书讲什么</th></tr>
-  <tr><td>build（主编排）</td><td>8481</td><td>怎么分活：自己干 / 派出去 / 找 sage；路由表；6 段委派契约；便宜活别用贵模型</td></tr>
+  <tr><td>build（主编排）</td><td>7048</td><td>怎么分活：自己干 / 派出去 / 找 sage；路由表；6 段委派契约；便宜活别用贵模型</td></tr>
   <tr><td>explore</td><td>2331</td><td>在原生"搜索"角色之上补"讲清楚机制"：深读全链路 → 压缩成 digest + 行号锚点；唯一写例外是 <code>clone_repo</code>（克隆到本机缓存），绝对路径/只读/并行由原生搜索提示词负责</td></tr>
-  <tr><td>sage</td><td>6083</td><td>只出主意不动手；**总是交完整方案**（决策完备模板：Context/Steps/Risks/Out of scope/Open questions）；先给 1-2 句结论，再给方案</td></tr>
+  <tr><td>sage</td><td>5461</td><td>只出主意不动手；**总是交完整方案**（决策完备模板：Context/Steps/Risks/Out of scope/Open questions）；先给 1-2 句结论，再给方案</td></tr>
   <tr><td>general</td><td>1153</td><td>最小改动、贴真实输出、做完即停</td></tr>
   <tr><td>browse</td><td>2952</td><td>像人一样上网；每条结论带网址 + 选择器 + 引文</td></tr>
 </table>
@@ -142,7 +142,7 @@
 </table>
 <p class="tiny"><b>结论（2026-10-18）</b>：按上面这份对照，② 已<b class="red">整体删除</b>，且按你的意思<b>不搬任何一条</b>——这类"完成标准/不许删改判据"的强制规范归 ULW 模式（由契约承担），正常工作不需要。</p>
 </div>
-<p class="tiny"><b class="red">2026-10-19/20 新增：子代理请求协议</b>——所有子代理（explore / general / sage / browse）都能在返回结果里夹一个 <code>&lt;grit-request to="build"&gt;</code> 块（kind: explore | user | access | other），向 build 提要求，而不是自己扩大范围或闷头乱摸。build 的 <code>&lt;subagent_requests&gt;</code> 规定它必须先把请求满足（多半是跑一次 explore 拿 digest）再重派同一单元，每单元最多 2 轮。大范围扫库只有 <code>explore</code> 干；<code>sage</code> 只读简报里给到的路径/摘要（缺就提请求），而且是"动手前定方案"的席位、不做事后复审。</p>
+<p class="tiny"><b class="red">2026-10-19/20</b>：<code>sage</code> 只负责"定方案"，不做事后复审；它只读简报里给到的路径与摘要——大范围扫库是 <code>explore</code> 的活。（曾试过"子代理回 <code>&lt;grit-request&gt;</code> 向 build 提要求"的协调协议，判断为收益不抵成本，已撤。）</p>
 <p class="tiny">全文见 <code>contracts/discipline/&lt;角色&gt;.md</code>；改这些文件即改注入内容，不用动代码。</p></details>
 
 <details><summary>② 共用完成纪律 —— <span class="red">已于 2026-10-18 整体删除</span><span class="src">原文件 contracts/discipline/_shared.md</span></summary>

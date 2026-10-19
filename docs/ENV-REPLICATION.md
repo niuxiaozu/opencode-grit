@@ -138,19 +138,6 @@ D:\workspace\selfProjects\agent-worktemp\
 
 **子代理描述只写"能干什么"**：`agents/index.json` 里的 `description` 只陈述能力，不写"什么时候用我"——"什么时候用谁"只写在 build 的路由表（`contracts/discipline/build.md` 的 `<routing_table>`）与 `<sage_policy>` 里，避免子代理自我推销导致乱派活。`plan` 是 OpenCode 原生只读模式（`opencode.plan`，自带 `edit:deny` 权限与 Plan-mode 提醒）：grit 不物化它的记录、不注入纪律，用户手动切到 plan 就用原生那套。去掉 plan 之后，"需要顶级模型指定方案"这活由 `sage` 承担：它的纪律文件里合并了原 plan 的成熟度分类与计划标准，输出契约是"**总是**交完整方案"；它是**动手前**定方案的席位，不做事后复审（复审/验证归建它的人）。
 
-**子代理请求协议（新增）**：简报自足是目标而不是假设——**每个子代理**都能在返回结果里夹一个请求块，向 build 提要求（缺路径、缺命令、要一个决定、要一次 explore）。这是子代理与编排者之间的协同通道，比各自闷头乱摸便宜：
-
-```text
-<grit-request to="build">
-- kind: explore | user | access | other
-- what: <一行：需要什么>
-- why it blocks: <一行>
-- brief for that worker: <可选，给 explore 用的现成简报>
-</grit-request>
-```
-
-build 看到结果里带这个块，必须**先满足再重派**：`explore` → 跑 explore 拿 digest 后重派同一单元；`user` → 问用户；`access/other` → 自己补或上交用户。上限每单元 2 轮。定义位置：build 的 `<subagent_requests>`、各子代理纪律文件里的 `<requests>`。配套约束：大范围扫库只有 `explore` 干；`sage` 尤其只读简报里给到的路径/摘要，缺就提请求而不是自己翻库。
-
 ### 2.4 规则与优先级
 
 - `AGENTS.md`（用户自己的）**权威最高**，跟环境强相关：成本纪律（一轮消息里把已知的工具调用全并行发出去）、面向用户的文风、密钥红线。
