@@ -58,10 +58,10 @@ import {
  * grit 托管的席位。`plan` 不在此列：它是 OpenCode 原生的只读 plan 模式（`opencode.plan`，
  * 自带 edit:deny 权限与 Plan-mode 提醒），不注入纪律、不物化 agents 记录、不参与动态注入。
  */
-const AGENT_NAMES = ["build", "explore", "general", "expert", "browse"]
+const AGENT_NAMES = ["build", "explore", "general", "sage", "browse"]
 /** 曾被 grit 托管、现已移除的席位（安装/切换时一并从 opencode.json 清除，避免残留）。
  *  `plan` 交回 OpenCode 原生 plan 模式：不写记录，原生身份/权限/描述才不会被我们覆盖。 */
-const REMOVED_AGENT_NAMES = ["factory", "plan"]
+const REMOVED_AGENT_NAMES = ["factory", "plan", "expert"]
 /** /ulw 命令携带的授权标识：ulw_enter 校验「上一条用户消息」是否含它，无则拒绝进入。 */
 const ULW_AUTH_TOKEN = "[GRIT:ULW:START]"
 const SENTINEL_EXIT = "[GRIT:ULW:EXIT]"

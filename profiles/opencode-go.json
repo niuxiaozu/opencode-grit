@@ -1,11 +1,11 @@
 {
   "name": "opencode-go",
-  "description": "OpenCode Go 档：build/explore/general/browse=deepseek-v4.1-flash（傻快主力）；plan/expert=glm-5.3（前沿档）",
+  "description": "OpenCode Go 档：build/explore/general/browse=deepseek-v4.1-flash（傻快主力）；plan/sage=glm-5.3（前沿档）",
   "model": {
     "build": "opencode-go/deepseek-v4.1-flash",
     "explore": "opencode-go/deepseek-v4.1-flash",
     "general": "opencode-go/deepseek-v4.1-flash",
-    "expert": "opencode-go/glm-5.3",
+    "sage": "opencode-go/glm-5.3",
     "browse": "opencode-go/deepseek-v4.1-flash"
   },
   "promptVariants": {},
@@ -14,7 +14,7 @@
       { "action": "subagent", "resource": "*", "effect": "deny" },
       { "action": "subagent", "resource": "explore", "effect": "allow" },
       { "action": "subagent", "resource": "general", "effect": "allow" },
-      { "action": "subagent", "resource": "expert", "effect": "allow" },
+      { "action": "subagent", "resource": "sage", "effect": "allow" },
       { "action": "subagent", "resource": "browse", "effect": "allow" }
     ]
   },

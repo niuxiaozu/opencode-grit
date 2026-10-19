@@ -30,9 +30,9 @@ const bakPath = join(cfgDir, "opencode.json.bak-grit")
 const dataRoot = join(cfgDir, "grit")
 const legacyDataRoot = join(cfgDir, "omo-lite")
 
-const AGENT_NAMES = ["build", "plan", "explore", "general", "expert", "browse"]
+const AGENT_NAMES = ["build", "plan", "explore", "general", "sage", "browse"]
 /** 曾被 grit 托管、现已移除的席位（安装时一并清除，避免残留）。 */
-const REMOVED_AGENT_NAMES = ["factory", "plan"]
+const REMOVED_AGENT_NAMES = ["factory", "plan", "expert"]
 const COMMAND_FILES = ["ulw.md", "ulw-exit.md", "handoff.md", "profile.md"]
 /** 旧命令名（改名后清理部署残留）。 */
 const LEGACY_COMMAND_FILES = ["stop-continuation.md"]

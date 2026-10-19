@@ -1,11 +1,11 @@
 {
   "name": "deepseek",
-  "description": "DeepSeek 档：build/explore/general/browse=deepseek-flash（傻快主力）；plan/expert=glm-5.3（前沿档）",
+  "description": "DeepSeek 档：build/explore/general/browse=deepseek-flash（傻快主力）；plan/sage=glm-5.3（前沿档）",
   "model": {
     "build": "deepseek/deepseek-flash",
     "explore": "deepseek/deepseek-flash",
     "general": "deepseek/deepseek-flash",
-    "expert": "zhipuai-coding-plan/glm-5.3",
+    "sage": "zhipuai-coding-plan/glm-5.3",
     "browse": "deepseek/deepseek-flash"
   },
   "promptVariants": {},
@@ -14,7 +14,7 @@
       { "action": "subagent", "resource": "*", "effect": "deny" },
       { "action": "subagent", "resource": "explore", "effect": "allow" },
       { "action": "subagent", "resource": "general", "effect": "allow" },
-      { "action": "subagent", "resource": "expert", "effect": "allow" },
+      { "action": "subagent", "resource": "sage", "effect": "allow" },
       { "action": "subagent", "resource": "browse", "effect": "allow" }
     ]
   },

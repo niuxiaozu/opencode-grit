@@ -1,11 +1,11 @@
 {
   "name": "glm-max",
-  "description": "贵档全量：build/plan/expert 用 glm-5.3",
+  "description": "贵档全量：build/plan/sage 用 glm-5.3",
   "model": {
     "build": "zhipuai-coding-plan/glm-5.3",
     "explore": "zhipuai-coding-plan/glm-5.3-flash",
     "general": "zhipuai-coding-plan/glm-5.3-flash",
-    "expert": "zhipuai-coding-plan/glm-5.3",
+    "sage": "zhipuai-coding-plan/glm-5.3",
     "browse": "zhipuai-coding-plan/glm-5.3-flash"
   },
   "promptVariants": {},
@@ -14,7 +14,7 @@
       { "action": "subagent", "resource": "*", "effect": "deny" },
       { "action": "subagent", "resource": "explore", "effect": "allow" },
       { "action": "subagent", "resource": "general", "effect": "allow" },
-      { "action": "subagent", "resource": "expert", "effect": "allow" },
+      { "action": "subagent", "resource": "sage", "effect": "allow" },
       { "action": "subagent", "resource": "browse", "effect": "allow" }
     ]
   },

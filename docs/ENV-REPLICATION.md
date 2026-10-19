@@ -33,7 +33,7 @@
 |---|---|---|---|---|
 | OpenCode CLI V2 | 整个运行时/服务/TUI | npm 全局 `@opencode/cli` | `C:\Users\Administrator\AppData\Roaming\npm` | `npm i -g @opencode/cli` |
 | OpenChamber | OpenCode 的图形前端（可选） | 你已有的安装 | 本机未装（新机器已装） | 用你现有的装法；它读同一份 `~/.config/opencode` |
-| **grit** | 五代理多代理套件（build/explore/general/expert/browse）+ ULW 持续工作模式 + profile 分档 | GitHub `niuxiaozu/opencode-grit`（分支 `opencode-v2`） | 仓库 `D:\workspace\selfProjects\agent-worktemp\grit`；部署 `~/.config/opencode/{plugins/grit.ts, plugins/grit-tui/tui.ts, grit/, scripts/, commands/}` | `git clone -b opencode-v2` → `npm i` → `node scripts/install.mjs` |
+| **grit** | 五代理多代理套件（build/explore/general/sage/browse）+ ULW 持续工作模式 + profile 分档 | GitHub `niuxiaozu/opencode-grit`（分支 `opencode-v2`） | 仓库 `D:\workspace\selfProjects\agent-worktemp\grit`；部署 `~/.config/opencode/{plugins/grit.ts, plugins/grit-tui/tui.ts, grit/, scripts/, commands/}` | `git clone -b opencode-v2` → `npm i` → `node scripts/install.mjs` |
 | **opencode-worktime** | 定时暂停/恢复会话、定时发消息；模型工具 `worktime_*` | GitHub `niuxiaozu/opencode-worktime`（分支 `opencode-v2`） | 仓库 `D:\workspace\selfProjects\agent-worktemp\opencode-worktime`；部署 `~/.config/opencode/plugins/opencode-worktime.ts` + `~/.worktime/worktime.json` | `git clone -b opencode-v2` → `powershell -File scripts/install.ps1` |
 | **secret-redact** | 把金库里的密钥值从每次请求里抹掉（防泄漏给模型/日志） | 本机自研（无仓库） | `~/.config/opencode/plugins/secret-redact.ts` | 粘贴附录 B-1 |
 | **secret-ui** | TUI 里敲 `/secret <名字>` 安全录入密钥；给模型一个 `secret_list` 工具（只列名字） | 本机自研（无仓库） | `~/.config/opencode/plugins/secret-ui/{index.ts,tui.ts}` | 粘贴附录 B-2、B-3 |
@@ -98,7 +98,7 @@ D:\workspace\selfProjects\agent-worktemp\
 | OpenCode CLI | **v2.0.25**（npm 全局 `@opencode/cli`） |
 | 插件运行时依赖 | `@opencode/plugin ^2.0.20`（装在 `~/.config/opencode/node_modules`） |
 | 已登录的模型 provider（`opencode auth list`） | OpenCode Go / DeepSeek / Zhipu AI Coding Plan（三个都是 stored） |
-| grit 当前档（`grit/profiles/active`） | `opencode-go`：build/explore/general/browse = `opencode-go/deepseek-v4.1-flash`，expert = `opencode-go/glm-5.3`（plan 归原生，不映射） |
+| grit 当前档（`grit/profiles/active`） | `opencode-go`：build/explore/general/browse = `opencode-go/deepseek-v4.1-flash`，sage = `opencode-go/glm-5.3`（plan 归原生，不映射） |
 | bsk | 0.2.0 |
 | OpenSCAD | **本机未安装**（技能里写的是 `C:\Program Files\OpenSCAD\openscad.exe`，新机器要装） |
 | 记忆插件 | `opencode-mem`（embedding 用 `Xenova/nomic-embed-text-v1`，本地推理） |
@@ -110,7 +110,7 @@ D:\workspace\selfProjects\agent-worktemp\
 
 ### 2.1 一句话
 
-用 OpenCode V2 原生的能力（插件、agents、commands、skills、MCP）**轻量地**搭出一支"五人小队"：一个编排者（build）在便宜模型上干活，遇到难判断才升级到贵模型（expert），需要"只讨论计划"时手动切到 OpenCode 原生 plan 模式；搜索靠 explore 压缩摘要，动手靠 general，上网靠 browse，云端不要一键全自动、而是**用户说一句干完一整个阶段**。
+用 OpenCode V2 原生的能力（插件、agents、commands、skills、MCP）**轻量地**搭出一支"五人小队"：一个编排者（build）在便宜模型上干活，遇到难判断才升级到贵模型（sage），需要"只讨论计划"时手动切到 OpenCode 原生 plan 模式；搜索靠 explore 压缩摘要，动手靠 general，上网靠 browse，云端不要一键全自动、而是**用户说一句干完一整个阶段**。
 
 ### 2.2 ULW 持续工作模式（这套环境的核心体验）
 
@@ -130,13 +130,13 @@ D:\workspace\selfProjects\agent-worktemp\
 |---|---|---|
 | build | 编排：自己干 / 派活 / 升级 / 分档 | deepseek-v4.1-flash（便宜档） |
 | explore | 只读搜索，回摘要 + 文件行号锚点 | deepseek-v4.1-flash |
-| expert | 只读顾问：难判断、高风险改动复审 | glm-5.3 |
+| sage | 顶级模型席位：判断力/世界知识/方案指定——疑难决策、高风险改动复审，**总是交完整方案**（决策完备模板：Context/Steps/Risks/Out of scope/Open questions） | glm-5.3（贵档） |
 | general | 多步执行 | deepseek-v4.1-flash |
 | browse | 真实浏览器研究/采集 | deepseek-v4.1-flash |
 
 分档靠 `profiles/*.json`（改 `agents` 记录里的 model 与权限），`opencode-go` 是日常档；切档用 `/profile <名字>`（会话内）或终端 `grit profile <名字>`，v2 监视配置目录，约 3 秒热生效（当前会话已选的模型不变）。
 
-**子代理描述只写"能干什么"**：`agents/index.json` 里的 `description` 只陈述能力，不写"什么时候用我"——"什么时候用谁"只写在 build 的路由表（`contracts/discipline/build.md` 的 `<routing_table>`）与 `<expert_policy>` 里，避免子代理自我推销导致乱派活。`plan` 是 OpenCode 原生只读模式（`opencode.plan`，自带 `edit:deny` 权限与 Plan-mode 提醒）：grit 不物化它的记录、不注入纪律，用户手动切到 plan 就用原生那套。
+**子代理描述只写"能干什么"**：`agents/index.json` 里的 `description` 只陈述能力，不写"什么时候用我"——"什么时候用谁"只写在 build 的路由表（`contracts/discipline/build.md` 的 `<routing_table>`）与 `<sage_policy>` 里，避免子代理自我推销导致乱派活。`plan` 是 OpenCode 原生只读模式（`opencode.plan`，自带 `edit:deny` 权限与 Plan-mode 提醒）：grit 不物化它的记录、不注入纪律，用户手动切到 plan 就用原生那套。去掉 plan 之后，"需要顶级模型指定方案"这活由 `sage` 承担：它的纪律文件里合并了原 plan 的成熟度分类与计划标准，输出契约是"**总是**交完整方案"。
 
 ### 2.4 规则与优先级
 
@@ -405,7 +405,7 @@ node "C:\Users\Administrator\.config\opencode\scripts\grit.mjs" %*
 （模型进入 → 连续干活 → 自己判断完成后 ulw_exit；你随时可以插话，插件会先按住再恢复）
 
 # 只想要"能派活的小队"
-直接正常对话；遇到要搜的用 @explore，难判断的它自己会找 expert
+直接正常对话；遇到要搜的用 @explore，难判断的它自己会找 sage
 
 # 省钱的错峰
 /worktime sleep 23:30      # 每天 23:30 自动暂停（连 agent 也停）
@@ -644,7 +644,7 @@ Stop only when the whole task is done. Every extra turn costs money.
         },
         {
           "action": "subagent",
-          "resource": "expert",
+          "resource": "sage",
           "effect": "allow"
         },
         {
@@ -671,9 +671,9 @@ Stop only when the whole task is done. Every extra turn costs money.
       "description": "General-purpose executor. Carries out one scoped unit of work end to end and reports the real output it produced.",
       "model": "opencode-go/deepseek-v4.1-flash"
     },
-    "expert": {
+    "sage": {
       "mode": "all",
-      "description": "Read-only consultant. Analyzes architecture and design tradeoffs, diagnoses hard failures, and reviews changes for defects and risk; answers with one recommendation backed by file:line evidence.",
+      "description": "Read-only senior advisor. Owns the team's judgment, world knowledge and approach specification: analyzes tradeoffs, returns the decision-complete plan for how the work should be built, diagnoses hard failures, and reviews changes for defects and risk.",
       "model": "opencode-go/glm-5.3"
     },
     "browse": {
@@ -1614,7 +1614,7 @@ grit/
 | bsk | 0.2.0 |
 | grit 仓库分支 / origin | `opencode-v2` / github.com/niuxiaozu/opencode-grit |
 | worktime 仓库分支 / origin | `opencode-v2` / github.com/niuxiaozu/opencode-worktime |
-| 当前档 | `opencode-go`（build/explore/general/browse=opencode-go/deepseek-v4.1-flash；expert=opencode-go/glm-5.3；plan 归原生、不映射） |
+| 当前档 | `opencode-go`（build/explore/general/browse=opencode-go/deepseek-v4.1-flash；sage=opencode-go/glm-5.3；plan 归原生、不映射） |
 | 部署副本与仓库一致性 | `plugins/grit.ts` 与仓库 `plugin/grit.ts` 哈希一致（`node scripts/install.mjs` 保证） |
 | 冒烟基线 | `npx tsc --noEmit` 干净；`node harness/smoke.ts` 全过 |
 | 密钥名字（值不在此） | `caddy.basic`、`router.admin`、`canary.value` |

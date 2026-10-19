@@ -101,15 +101,15 @@
 <p class="tiny">形状固定，外面包一层标签；内容 = 该角色的说明书（+ 档里指定的变体）；共用完成纪律已于 2026-10-18 删除。</p>
 <pre>&lt;GRIT-DISCIPLINE agent="build"&gt;
 [GRIT:DISCIPLINE:build]
-&lt;role&gt;You are the build orchestrator of a five-agent team (build, explore, general, expert, browse). … &lt;/role&gt;
+&lt;role&gt;You are the build orchestrator of a five-agent team (build, explore, general, sage, browse). … &lt;/role&gt;
 &lt;routing_table&gt; … &lt;/routing_table&gt;
 … &lt;/hard_blocks&gt;
 &lt;/GRIT-DISCIPLINE&gt;</pre>
 <table>
   <tr><th style="width:130px">角色</th><th style="width:70px">字符</th><th>这份说明书讲什么</th></tr>
-  <tr><td>build（主编排）</td><td>6873</td><td>怎么分活：自己干 / 派出去 / 找专家；路由表；6 段委派契约；便宜活别用贵模型</td></tr>
+  <tr><td>build（主编排）</td><td>6954</td><td>怎么分活：自己干 / 派出去 / 找 sage；路由表；6 段委派契约；便宜活别用贵模型</td></tr>
   <tr><td>explore</td><td>2331</td><td>在原生"搜索"角色之上补"讲清楚机制"：深读全链路 → 压缩成 digest + 行号锚点；唯一写例外是 <code>clone_repo</code>（克隆到本机缓存），绝对路径/只读/并行由原生搜索提示词负责</td></tr>
-  <tr><td>expert</td><td>3292</td><td>只出主意不动手；给一个推荐而不是选项清单</td></tr>
+  <tr><td>sage</td><td>5217</td><td>只出主意不动手；**总是交完整方案**（决策完备模板：Context/Steps/Risks/Out of scope/Open questions）；先给 1-2 句结论，再给方案</td></tr>
   <tr><td>general</td><td>1153</td><td>最小改动、贴真实输出、做完即停</td></tr>
   <tr><td>browse</td><td>2952</td><td>像人一样上网；每条结论带网址 + 选择器 + 引文</td></tr>
 </table>
@@ -117,13 +117,13 @@
 <h4>build 说明书里的 5 个段落（2026-10-18 瘦身后：verify/tone/hard_blocks 移出、search_rule 并入表格）</h4>
 <table>
   <tr><th style="width:150px">段落</th><th style="width:70px">字符</th><th>讲什么</th><th style="width:140px">这次会话用到了吗</th></tr>
-  <tr><td><code>&lt;role&gt;</code></td><td>354</td><td>你是五人团队（build/explore/general/expert/browse）的编排者，plan 是 OpenCode 原生只读模式；自己干更快更便宜就自己干</td><td>一直生效</td></tr>
+  <tr><td><code>&lt;role&gt;</code></td><td>245</td><td>你是五人团队的编排者；自己干更快更便宜就自己干</td><td>一直生效</td></tr>
   <tr><td><code>&lt;routing_table&gt;</code></td><td>3939</td><td>派活对照表（含成本分档：便宜 1×／中 5×／贵 20×）；2026-10-18 把 <code>&lt;search_rule&gt;</code> 的两条独有规则并了进来（要改的代码自己读、什么时候停止搜索），三行 browse 并成一行，"严重卡壳"那行补上"且你说不出原因"</td><td>一直在用</td></tr>
   <tr><td><code>&lt;delegation_contract&gt;</code></td><td>1368</td><td>派活时提示词必须含 6 段（任务／期望结果／可用工具／必须做／不许做／背景），后面跟一个"错例 vs 对例"的示例块</td><td>派 browse 时用了</td></tr>
-  <tr><td><code>&lt;expert_policy&gt;</code></td><td>795</td><td>四条判定标准：① 事实能在仓库／任务／实验里找到就自己查；② 含糊且后果重才咨询，且只咨询一次（带上用户原话）；③ 产品口味类问题问用户、不问专家；④ 执行类难题升级门槛三条合取</td><td class="red">已瘦身（3168 → 795）</td></tr>
-  <tr><td><code>&lt;failure_recovery&gt;</code></td><td>317</td><td>连续 3 次不同尝试都失败 → 回退到可用状态 + 找专家</td><td class="red">没用过（保留：属升级规则）</td></tr>
+  <tr><td><code>&lt;sage_policy&gt;</code></td><td>795</td><td>四条判定标准：① 事实能在仓库／任务／实验里找到就自己查；② 含糊且后果重才咨询，且只咨询一次（带上用户原话）；③ 产品口味类问题问用户、不问专家；④ 执行类难题升级门槛三条合取</td><td class="red">已瘦身（3168 → 795）</td></tr>
+  <tr><td><code>&lt;failure_recovery&gt;</code></td><td>317</td><td>连续 3 次不同尝试都失败 → 回退到可用状态 + 找 sage</td><td class="red">没用过（保留：属升级规则）</td></tr>
 </table>
-<p class="tiny">合计 <b>6665 字符</b>（原 10707，-38%）。2026-10-18 两轮：① 移出 verify/tone/hard_blocks（1125）→ 9581；② 删 <code>&lt;search_rule&gt;</code>（并入表格）、<code>&lt;expert_policy&gt;</code> 3168→795、合并 browse 三行 → <b>6665</b>。</p>
+<p class="tiny">合计 <b>6665 字符</b>（原 10707，-38%）。2026-10-18 两轮：① 移出 verify/tone/hard_blocks（1125）→ 9581；② 删 <code>&lt;search_rule&gt;</code>（并入表格）、<code>&lt;sage_policy&gt;</code> 3168→795、合并 browse 三行 → <b>6665</b>。</p>
 <p class="tiny"><b class="red">已于 2026-10-18 移出</b>：这段原本在 build 说明书里（注意 V1/V2/V3 是<b>验证级别</b>，不是版本号）。原文留在下面，可以直接粘进 <code>AGENTS.md</code>：</p>
 <pre>- V1 single file, no behavior change: lsp_diagnostics clean on the file.
 - V2 ≤3 files, behavior change: run the tests that cover them.
@@ -137,7 +137,7 @@
   <tr><td>build <code>&lt;verify&gt;</code> <span class="red">（已移出）</span></td><td>"should pass" is not verification … **NO EVIDENCE = NOT COMPLETE.**（2026-10-18 从 build 说明书移出，改放用户的 AGENTS.md）</td></tr>
   <tr><td>general <code>&lt;verification&gt;</code></td><td>Done means: lsp_diagnostics clean … AND the relevant build/test command actually ran with output shown. "Should work" is not done.</td></tr>
   <tr><td>explore <code>&lt;success_criteria&gt;</code> / <code>&lt;failure_conditions&gt;</code></td><td>关键结论必须带行号；漏掉明显匹配／调用方还得追问就算失败（绝对路径、只读、并行由原生搜索提示词负责）</td></tr>
-  <tr><td>expert <code>&lt;consultation_rules&gt;</code></td><td>每个判断都要有依据（引用你亲自看过的文件路径）</td></tr>
+  <tr><td>sage <code>&lt;consultation_rules&gt;</code></td><td>每个判断都要有依据（引用你亲自看过的文件路径）；而且**总是交完整方案**（Context/Steps/Risks/Out of scope/Open questions，每步带验证）——原 plan 的"计划标准"已并入这里</td></tr>
   <tr><td>browse <code>&lt;failure_conditions&gt;</code></td><td>结论没锚点／把错误页当数据／该交配方却硬啃 → 算失败</td></tr>
 </table>
 <p class="tiny"><b>结论（2026-10-18）</b>：按上面这份对照，② 已<b class="red">整体删除</b>，且按你的意思<b>不搬任何一条</b>——这类"完成标准/不许删改判据"的强制规范归 ULW 模式（由契约承担），正常工作不需要。</p>
@@ -146,7 +146,7 @@
 
 <details><summary>② 共用完成纪律 —— <span class="red">已于 2026-10-18 整体删除</span><span class="src">原文件 contracts/discipline/_shared.md</span></summary>
 <p class="tiny">删除理由（你的判断）：这类"补录、删改、测试判据、完成标准"的强制规范属于 <b>ULW 模式</b>——那是你主动开启、要模型严格按标准交付时才该上的紧箍咒；<b>不开 ULW 的正常工作</b>，让模型按任务自己处理就好，不必常驻强制规范。</p>
-<p class="tiny">删掉之后没有角色会"失去完成标准"：五份说明书各自都带了自己的那一份（<code>&lt;verify&gt;</code>... 现为 build <code>&lt;routing_table&gt;</code> 尾注、general <code>&lt;verification&gt;</code>、explore <code>&lt;success_criteria&gt;</code> / <code>&lt;failure_conditions&gt;</code>、expert <code>&lt;consultation_rules&gt;</code>、browse <code>&lt;failure_conditions&gt;</code>）。ULW 开启时，同样内容由契约【2 双证据】【5 零容忍】【6 完成判定】承担。</p>
+<p class="tiny">删掉之后没有角色会"失去完成标准"：五份说明书各自都带了自己的那一份（<code>&lt;verify&gt;</code>... 现为 build <code>&lt;routing_table&gt;</code> 尾注、general <code>&lt;verification&gt;</code>、explore <code>&lt;success_criteria&gt;</code> / <code>&lt;failure_conditions&gt;</code>、sage <code>&lt;consultation_rules&gt;</code>、browse <code>&lt;failure_conditions&gt;</code>）。ULW 开启时，同样内容由契约【2 双证据】【5 零容忍】【6 完成判定】承担。</p>
 <p class="tiny">实现上：插件读不到这个文件就自动跳过（<code>readText(...) ?? ""</code>），不需要改代码；安装脚本已把部署里那份一并清除。</p>
 <details><summary>留档：删除前的原文（5 条）</summary>
 <pre>&lt;completion_discipline&gt;
@@ -167,7 +167,7 @@
 
 【2. 双证据（去 TDD 化）】每条判据完成后必须附真实执行痕迹：命令输出/测试运行结果/HTTP 状态/DB 记录/截图，形式不限；有测试接缝就跑测试作证据，无接缝就真实操作一遍取证；"看代码觉得对"不构成完成依据。不规定开发流程，不要求先写测试，无 RED→GREEN 顺序要求。
 
-【3. 审查门】改动 3+ 文件 / 碰安全·权限·迁移 / 单元超 30min / 用户要求严格 → 委派 expert（只读）复查；blocker 必须引用失败判据才算阻塞，其余是备注；最多回审 2 轮后上交用户。
+【3. 审查门】改动 3+ 文件 / 碰安全·权限·迁移 / 单元超 30min / 用户要求严格 → 委派 sage（只读）复查；blocker 必须引用失败判据才算阻塞，其余是备注；最多回审 2 轮后上交用户。
 
 【4. MANUAL QA 矩阵】按改动类型强制真实操作：CLI→跑命令贴输出；API→调端点贴状态与响应；UI→浏览器截图；配置→加载并验证解析形状。清理也是 QA：为验证开的进程/端口/临时目录必须清理，未清理=未完成。
 

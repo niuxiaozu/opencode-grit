@@ -14,9 +14,9 @@
     "mode": "subagent",
     "description": "General-purpose executor. Carries out one scoped unit of work end to end and reports the real output it produced."
   },
-  "expert": {
+  "sage": {
     "mode": "all",
-    "description": "Read-only consultant. Analyzes architecture and design tradeoffs, diagnoses hard failures, and reviews changes for defects and risk; answers with one recommendation backed by file:line evidence."
+    "description": "Read-only senior advisor. Owns the team's judgment, world knowledge and approach specification: analyzes tradeoffs, returns the decision-complete plan for how the work should be built, diagnoses hard failures, and reviews changes for defects and risk."
   },
   "browse": {
     "mode": "subagent",

@@ -232,19 +232,19 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);color:v
     <tr><td>plan</td><td>primary（原生）</td><td>否</td><td>配置记录（不覆盖权限）</td><td>计划纪律段（可选）</td></tr>
     <tr><td>explore 检索</td><td>subagent</td><td><b style="color:var(--warn)">是（PROMPT_EXPLORE）</b></td><td>配置记录（<b>必须省 system</b>）</td><td>摘要契约 · 深读 · clone_repo 用法</td></tr>
     <tr><td>general 执行</td><td>subagent</td><td>否</td><td>配置记录（省 system）</td><td>目标/完成纪律 · scope · 验证 · 报告</td></tr>
-    <tr><td>expert 决策</td><td>all</td><td>无</td><td>配置记录（省 system）</td><td>决策框架 · 输出契约</td></tr>
+    <tr><td>sage 决策</td><td>all</td><td>无</td><td>配置记录（省 system）</td><td>决策框架 · 输出契约</td></tr>
     <tr><td>factory 造数</td><td>subagent</td><td>无</td><td>配置记录（省 system）</td><td>造数规则 · 工作流 · 输出契约</td></tr>
     <tr><td>browse 浏览</td><td>subagent</td><td>无</td><td>配置记录（省 system）</td><td>任务 · 工具 · 锚点纪律</td></tr>
   </table>
   <p class="mut">名额 7（不新增 architect）。<b>不强制流水线</b>：角色"有用才用"。</p>
   </div>
   <details>
-    <summary>逐席判定（build/general 兼容 · explore 合成 · plan 原生 · expert 保留）</summary>
+    <summary>逐席判定（build/general 兼容 · explore 合成 · plan 原生 · sage 保留）</summary>
     <div class="body">
       <p class="mut"><b>build / general</b>：v2 内置<b>无 system</b> → 天然兼容，薄覆盖 + 追加纪律即可。</p>
       <p class="mut"><b>explore</b>：v2 是只读<b>定位器</b>；grit 是理解<b>压缩器</b>（深读全链、只回 digest，正是"避免污染、只留有用内容"）。同槽合成：取 v2 外壳 + grit 摘要契约；<b>显式放行 <code>clone_repo</code></b>（否则 v2 的 <code>* deny</code> 会拒）。</p>
-      <p class="mut"><b>plan</b>：采用 v2 原生 primary 模式；砍掉 grit 自建的可委派 plan 子代理（与 expert 重叠）。简单设计 build 自做，复杂设计交 expert。</p>
-      <p class="mut"><b>expert</b>：v2 无等价物，保留为唯一强档设计/决策顾问。</p>
+      <p class="mut"><b>plan</b>：采用 v2 原生 primary 模式；砍掉 grit 自建的可委派 plan 子代理（与 sage 重叠）。简单设计 build 自做，复杂设计交 sage。</p>
+      <p class="mut"><b>sage</b>：v2 无等价物，保留为唯一强档设计/决策顾问。</p>
     </div>
   </details>
 </section>

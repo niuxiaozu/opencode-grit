@@ -26,7 +26,7 @@
 
 在 v3 落地后按用户裁定做了四处修订（代码已改，本文件以下各节描述为 v3 原始设计，差异以此为准）：
 
-1. **移除 `factory` 席**：名册 6 席（build/plan/explore/general/expert/browse）。造数/测试工作由 `general` 直接承担；`agents/index.json`、`profiles/*`、build 路由表、README 同步删除。
+1. **移除 `factory` 席**：名册 6 席（build/plan/explore/general/sage/browse）。造数/测试工作由 `general` 直接承担；`agents/index.json`、`profiles/*`、build 路由表、README 同步删除。
 2. **哨兵统一改名为 `GRIT:ULW:*`**（自解释，去掉隐晦的动作词与 `v1` 后缀）：
    `[GRIT:ULW:START]`（原 `[grit:ulw:v1]`）、`[GRIT:ULW:STOP]`（原 `[grit:ulw-stop:v1]`）、`[GRIT:ULW:CONTINUE]`（原 `[grit:continue:v1]`）、`[GRIT:ULW:DONE]`（原 `[grit:done:v1]`）、`[GRIT:ULW:ACTIVE]`（原 `[grit:ulw-active]`）；契约块 `<!-- GRIT:ULW:CONTRACT -->`；纪律块 `<GRIT-ULW-DISCIPLINE agent="…">`。
 3. **ULW 目标改由模型设定**：不再从 `/ulw` 命令消息文本里取目标（用户输入常混有指挥性内容、目标也可能在前几条消息里或由模型提出）；模型从会话上下文提炼并以单独一行 `[GRIT:ULW:GOAL] <一句话目标>` 声明，插件在空闲时抓取，用于每轮标记与续跑提示。§6A/§7 中"目标=命令参数"的表述作废。
@@ -157,7 +157,7 @@ tools      5（context_usage/system_time/clone_repo/handoff/profile）
 | `plan` | primary（v2 原生） | 否 | 配置记录（不覆盖权限） | 计划纪律段（可选） |
 | `explore` 检索 | subagent | **是（PROMPT_EXPLORE）** | 配置记录（**必须省 system**） | 摘要契约 · 深读 · clone_repo 用法 |
 | `general` 执行 | subagent | 否 | 配置记录（省 system） | 目标/完成纪律 · scope · 验证 · 报告 |
-| `expert` 决策 | all | 无 | 配置记录（省 system） | 决策框架 · 输出契约 |
+| `sage` 决策 | all | 无 | 配置记录（省 system） | 决策框架 · 输出契约 |
 | `factory` 造数 | subagent | 无 | 配置记录（省 system） | 造数规则 · 工作流 · 输出契约 |
 | `browse` 浏览 | subagent | 无 | 配置记录（省 system） | 任务 · 工具 · 锚点纪律 |
 
@@ -166,8 +166,8 @@ tools      5（context_usage/system_time/clone_repo/handoff/profile）
 **关键判定（逐席）**
 - `build`/`general`：v2 内置**无 system** → **天然兼容**，薄覆盖 + 追加纪律即可。
 - `explore`：v2 是**只读定位器**（找位置、thoroughness 分级）；grit 是**理解/压缩器**（深读全链、只回 digest，正是"避免污染上下文、只留有用内容"）。**同槽合成**：取 v2 外壳（名/描述/只读权限/子代理目录呈现）+ grit 摘要契约；并**显式放行 `clone_repo`**（v2 的 `* deny` 会拒掉它）。
-- `plan`：**采用 v2 原生 primary 模式**（只读围栏 + 提醒 + plan 目录）；**砍掉 grit 自建的可委派 plan 子代理**（与 expert 重叠）。
-- `expert`：v2 无等价物；**保留**为唯一强档设计/决策顾问（简单设计 build 自做，复杂设计交 expert）。
+- `plan`：**采用 v2 原生 primary 模式**（只读围栏 + 提醒 + plan 目录）；**砍掉 grit 自建的可委派 plan 子代理**（与 sage 重叠）。
+- `sage`：v2 无等价物；**保留**为唯一强档设计/决策顾问（简单设计 build 自做，复杂设计交 sage）。
 
 **不强制流水线**：角色"有用才用"，不是必需管线（学 `opencode-orchestrator`）。
 
@@ -239,8 +239,8 @@ context_usage · system_time · clone_repo · handoff · profile（**不新增 t
 
 ## 9. 分档与"弱管强"·省 token
 
-- 分档 = `agents` 记录 `model`。便宜档：build/explore/general/factory/browse；强档：plan/expert。
-- **build 协议写入 costRatio 式分档**（学 model-router）：`fast=1x / medium=5x / heavy=20x`，规则 `min(cost, adequate)`、`if self is strongest: do locally`；简单设计 build 自做，复杂设计交 expert。
+- 分档 = `agents` 记录 `model`。便宜档：build/explore/general/factory/browse；强档：plan/sage。
+- **build 协议写入 costRatio 式分档**（学 model-router）：`fast=1x / medium=5x / heavy=20x`，规则 `min(cost, adequate)`、`if self is strongest: do locally`；简单设计 build 自做，复杂设计交 sage。
 - 省 token 杠杆：契约只注一次；每轮一行标记；只追加尾部/固定位；契约外置；explore/browse 只回 digest；强终止条款；token 被动快照；context_usage 按需查询；**按需注入**（重纪律只在 /ulw 付 token）。
 - v3 新增净成本：基础提示词 + identity 常驻（约数百 token/请求），是"恢复 opencode 设计"的定价。
 
@@ -330,6 +330,7 @@ context_usage · system_time · clone_repo · handoff · profile（**不新增 t
 4. **退出提醒由账本驱动**：`exitUlw` 置 `exitNoticePending=true`，下一次请求组装贴一次「已退出」提醒并清标记；不再扫用户消息里的 `[GRIT:ULW:EXIT]` 子串（用户正文提到该词会误判）。用户 `/ulw-exit` 与模型 `ulw_exit` 共用同一函数、同一段文本。
 5. **prompt 钩子识别自己的注入**：`isPluginInjectedText()`（契约块 / 续跑块）直接跳过，否则刚注入的契约会被当成"用户插话"，把刚进入的账本打成暂停。
 6. **同一批的其他清理**：`_shared.md` 已删（各角色说明书自带完成标准）；Dead 字段 `toolLoopWarn` 已从类型、默认值与 profile 中删除；`clone_repo` 增加 url/ref 参数注入防护（`--`、`--detach`、字符集与首字符校验 + 纯函数 `isSafeGitUrl`/`isSafeGitRef`）。
-7. **子代理 `description` 只写能力**，不写"什么时候用我"——"什么时候用谁"只在 build 的 `<routing_table>` 与 `<expert_policy>` 里。
+7. **子代理 `description` 只写能力**，不写"什么时候用我"——"什么时候用谁"只在 build 的 `<routing_table>` 与 `<sage_policy>` 里。
 9. **`plan` 移出 grit 框架**：它是 OpenCode 原生代理（`opencode.plan`，自带 `edit:deny` 权限与 Plan-mode 合成提醒），只可能由用户手动切换进入。grit 不再物化它的 agents 记录（`REMOVED_AGENT_NAMES = ["factory", "plan"]`，安装/切档时会清掉旧记录）、不再注入 `contracts/discipline/plan.md`（文件已删）、`AGENT_NAMES` 从 6 席变 5 席；profile 里的 `plan` 模型映射与 `subagent plan` 放行也一并移除。这样原生的身份/权限/描述不被我们覆盖。
+10. **`expert` 更名 `sage`，并把"方案"职责并进来**：弱管强架构下弱模型缺的是判断力与世界知识，plan 交回原生后，"需要顶级模型指定方案"的场景改由这个席位承担。改名 `expert` → `sage`（旧记录进 `REMOVED_AGENT_NAMES` 清掉），`contracts/discipline/sage.md` = 原 expert.md + 原 plan.md 的 `project_maturity` / `planning_standard` / `intent_routing` / `method` 合并重写；输出契约改成"**总是**交完整方案"（首行 1-2 句结论 + 决策完备模板），不再是"决策骨架 + 可执行计划归 plan"。build 的 `<expert_policy>` 随之更名 `<sage_policy>`，路由表/expertise 全部改指 `sage`。
 8. **与原生提示词的分工**（实测 `opencode debug agents` + 扫 `opencode.exe`）：原生给 build 的提示词带 Communication/Truthfulness/**Verification**/Preciseness/Tool-Use 五节，给 explore 的提示词已含"只读、绝对路径、并行"，给 plan 的 `opencode.plan` 代理自带 `edit:deny` 权限与 Plan-mode 提醒。据此把 `explore.md` 去重（删掉与原生重复的绝对路径/只读/并行措辞），并**显式覆盖**一处与原生相抵的表述：原生"不得创建任何文件"会让 `clone_repo`（克隆到本机缓存）变成违规，故新增 `<write_exception>` 声明它是唯一被授权的写动作。build/plan 的纪律块与原生不重复，保持不动。

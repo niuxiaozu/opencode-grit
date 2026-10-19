@@ -30,7 +30,7 @@
 
 ## 3. 代理阵容（R3）
 
-功能命名 6 个：`build`（主编排）/ `plan` / `explore` / `general` / `expert` / `factory`（造假数据+测试）。
+功能命名 6 个：`build`（主编排）/ `plan` / `explore` / `general` / `sage` / `factory`（造假数据+测试）。
 不要变体代理方案（否决了"explore-strong 挂强模型"的思路）；子代理模型切换接受重启生效。
 主代理模型切换：用户在界面 Tab 手切，可接受不热切。
 

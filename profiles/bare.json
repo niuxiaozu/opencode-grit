@@ -5,7 +5,7 @@
     "build": "zhipuai-coding-plan/glm-5.3-flash",
     "explore": "zhipuai-coding-plan/glm-5.3-flash",
     "general": "zhipuai-coding-plan/glm-5.3-flash",
-    "expert": "zhipuai-coding-plan/glm-5.3",
+    "sage": "zhipuai-coding-plan/glm-5.3",
     "browse": "zhipuai-coding-plan/glm-5.3-flash"
   },
   "promptVariants": {},

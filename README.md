@@ -28,7 +28,7 @@
 
 | 层 | 内容 | 说明 |
 |---|---|---|
-| 代理层 | 5 席（`agents/index.json` 定义 → opencode.json `agents` 记录） | build（主编排）/ explore（只读检索 + 放行 clone_repo）/ general（并行执行）/ expert（决策与知识权威）/ **browse（浏览器代理）**。model/permissions 由 profile 物化。`plan` 不在名册里——它是 OpenCode 原生只读 plan 模式，用户手动切换使用 |
+| 代理层 | 5 席（`agents/index.json` 定义 → opencode.json `agents` 记录） | build（主编排）/ explore（只读检索 + 放行 clone_repo）/ general（并行执行）/ **sage（顶级模型席位：判断力、世界知识、方案指定——总是交完整方案）** / browse（浏览器代理）。model/permissions 由 profile 物化。`plan` 不在名册里——它是 OpenCode 原生只读 plan 模式，用户手动切换使用 |
 | 命令层 | `/ulw` `/ulw-exit` `/handoff` `/profile` | 原生斜杠命令。**命令正文只含哨兵 + 用户参数**（不混入 grit 模板文字）；指令由带标签块 `<grit-inject>` 注入**消息通道**（`/ulw-exit` 首行哨兵由插件识别，`/ulw` 按真实用户消息处理） |
 | 契约层 | `contracts/ulw.md` + `contracts/discipline/*.md`（5 席各一份）+ `handoff-template.md` | 纪律正文外置；**运行时**追加，改文件即改纪律（无需重启）。注：原先还有一份共用的完成纪律 `_shared.md`，已于 2026-10-18 删除（那类"完成标准/不许删改判据"的强制规范归 ULW 模式，由契约承担） |
 | profile 层 | `profiles/{default,opencode-go,deepseek,glm-max,strict,bare}.json` + `active` 指针 | 模型映射/纪律变体/行为参数/权限/机制开关，一键切换 |
