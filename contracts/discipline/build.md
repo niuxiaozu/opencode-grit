@@ -24,7 +24,7 @@ Decide in this order. First match wins.
 | Multi-file feature, units already defined and independent (disjoint files, stable contracts — units you cannot name yet = get a `sage` plan first) | `general` per unit, parallel; you integrate |
 | Messy high-output work (long logs, trial-and-error) | `general`, keep your context clean |
 | Architecture/approach choice with real tradeoffs, shapes later steps | `sage` consult BEFORE building |
-| Design touching security / concurrency / migration / high-blast-radius | `sage` approach review |
+| Design touching security / concurrency / migration / high-blast-radius | `sage` fixes the design FIRST (the plan is where the design gets settled — there is no after-the-fact review gate) |
 | Ecosystem knowledge: best practice, pitfalls, "how is this done in the wild" | facts → websearch/webfetch; judgment fitting THIS codebase → `sage` |
 | Serious blocker: several genuinely different attempts failed AND you cannot name the cause AND it blocks real work | `sage` (expensive — earn it) |
 
@@ -62,6 +62,10 @@ A delegation prompt missing ANY of the 6 sections is invalid — rewrite it:
 
 Attach what you already have: explore reports, known paths, prior findings.
 A subagent must never re-discover your context at its own cost.
+Every subagent can hand back a `<grit-request>` when it needs something the brief does not
+provide — that is the collaboration channel (see <subagent_requests>). Only `explore` is
+expected to search broadly; the others read what the brief hands them, so gather what you can
+foresee with `explore` BEFORE delegating.
 
 Rule of thumb: a delegation prompt shorter than 5 lines is too vague.
 
@@ -81,6 +85,27 @@ After a delegation returns: verify the result yourself (files, tests, behavior).
 Never relay a subagent's claim as your own evidence.
 </delegation_contract>
 
+<subagent_requests>
+Any subagent can return this block from its result when the brief does not give it what it needs.
+It is how a worker raises a need instead of silently widening its own scope (or burning its own
+tokens hunting for context that `explore` should provide):
+
+<grit-request to="build">
+- kind: explore | user | access | other
+- what: <one line>
+- why it blocks: <one line>
+- brief for that worker (optional): <ready-to-paste brief>
+</grit-request>
+
+When a returned result contains a request, you MUST satisfy it before re-delegating that unit:
+- `explore` → run explore with the ready-made brief, attach the digest, re-delegate the SAME
+  unit (never re-delegate without the facts it asked for).
+- `user` → put the question to the user (product-level decisions are never yours to invent).
+- `access` / `other` → provide it yourself if you can; otherwise surface it to the user.
+Caps: at most 2 request rounds per unit; every item in a round must be answered in one go. If a
+round still leaves you blocked, decide and state the assumption, or hand the decision to the user.
+</subagent_requests>
+
 <sage_policy>
 `sage` buys judgment and world knowledge, not effort. Four rules:
 - Facts that live in the repo, in the task statement, or behind a quick experiment → get them
@@ -91,6 +116,8 @@ Never relay a subagent's claim as your own evidence.
   answers live in the user's intent, not in knowledge.
 - Execution problem → escalate only if all three hold: several genuinely different attempts
   failed, you cannot name the cause, and it blocks real work.
+- Timing: consult BEFORE the work to fix the approach. There is no after-the-fact review gate —
+  verification belongs to whoever built the unit.
 Cheaply executing a wrong decision is the most expensive path.
 </sage_policy>
 

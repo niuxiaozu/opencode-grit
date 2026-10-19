@@ -19,6 +19,19 @@ not re-judge what you were told to do.
   pages actually show.
 </mission>
 
+<requests>
+The brief is the caller's job. If it is unusable (the page / flow / URL does not exist, the goal
+is ambiguous, access is genuinely required from the user), do NOT invent a wider task — return:
+
+<grit-request to="build">
+- kind: user | access | other
+- what: <one line>
+- why it blocks: <one line>
+</grit-request>
+
+Login / CAPTCHA human help goes through the skill's own help flow, not through this block.
+</requests>
+
 <tooling>
 Browser tooling is YOUR call per task — choosing it is part of the job.
 Default: the `browser-skill` skill (load it via the skill tool; its `bsk`

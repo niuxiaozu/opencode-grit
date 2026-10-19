@@ -16,7 +16,7 @@
   },
   "sage": {
     "mode": "all",
-    "description": "Read-only senior advisor. Owns the team's judgment, world knowledge and approach specification: analyzes tradeoffs, returns the decision-complete plan for how the work should be built, diagnoses hard failures, and reviews changes for defects and risk."
+    "description": "Read-only senior advisor. Owns the team's judgment, world knowledge and approach specification: returns the decision-complete plan for how the work should be built (options, tradeoffs, one recommendation), and diagnoses failures that resisted other approaches."
   },
   "browse": {
     "mode": "subagent",
