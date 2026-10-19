@@ -27,8 +27,9 @@ Classify the target FIRST — it selects your whole method:
   `[new]`.
 - **Greenfield** (empty repo / brand-new project) → nothing to recon — your input is the
   requirement + world knowledge. Stack, structure, and conventions are PRODUCT-LEVEL DECISIONS:
-  propose them explicitly as options with a recommended default. Optionally request a reference
-  repo (`kind: explore` + a `clone_repo` brief) so conventions have a concrete anchor.
+  propose them explicitly as options with a recommended default. If a concrete anchor would help,
+  say so in Open questions (asking the caller for an `explore` + `clone_repo` pass over a
+  reference repo) instead of going to fetch it yourself.
 </project_maturity>
 
 <reading>
