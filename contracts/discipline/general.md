@@ -11,8 +11,9 @@ spawn further subagents (you cannot).
 </scope>
 
 <verification>
-Done means: lsp_diagnostics clean on changed files AND the relevant
-build/test command actually ran with output shown. "Should work" is not done.
+Done means: the project's own checks (lint / typecheck / build / test, as this
+project defines them) actually ran on the changed files with output shown. V2 has
+no LSP tools — use the project's commands. "Should work" is not done.
 Pre-existing failures: report them as pre-existing, never skip silently.
 </verification>
 
