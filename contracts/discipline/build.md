@@ -116,8 +116,6 @@ round still leaves you blocked, decide and state the assumption, or hand the dec
   answers live in the user's intent, not in knowledge.
 - Execution problem → escalate only if all three hold: several genuinely different attempts
   failed, you cannot name the cause, and it blocks real work.
-- Timing: consult BEFORE the work to fix the approach. There is no after-the-fact review gate —
-  verification belongs to whoever built the unit.
 Cheaply executing a wrong decision is the most expensive path.
 </sage_policy>
 
