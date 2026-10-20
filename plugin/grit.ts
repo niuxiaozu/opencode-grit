@@ -217,6 +217,120 @@ function leanHandoffSummary(): string {
   ].join("\n")
 }
 
+// ===================== 交接会话标题（纯函数，便于测试） =====================
+
+/** 会话标题的展示宽度上限（CJK 计 2 格、ASCII 计 1 格，对齐侧边栏截断宽度）。 */
+export const HANDOFF_TITLE_MAX_CELLS = 40
+
+/** 交接模板的小节名：只是结构标记，不能拿来当标题。 */
+const HANDOFF_SECTION_NAMES = new Set([
+  "任务与目标",
+  "目标",
+  "当前状态",
+  "已确认的事实",
+  "已确认的事实（无需重新探索）",
+  "待处理的工作",
+  "待办",
+  "已知的坑",
+  "验证情况",
+  "会话级状态",
+  "会话交接摘要",
+  "交接摘要",
+  "摘要",
+  "背景",
+  "备注",
+])
+
+/** 单个码点的展示宽度（East Asian Wide/Fullwidth 计 2）。 */
+function codePointCells(cp: number): number {
+  return (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2e80 && cp <= 0xa4cf) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe30 && cp <= 0xfe6f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x1f300 && cp <= 0x1f64f) ||
+    (cp >= 0x1f900 && cp <= 0x1f9ff)
+    ? 2
+    : 1
+}
+
+/** 字符串的展示宽度（测试与截断共用）。 */
+export function displayCells(s: string): number {
+  let n = 0
+  for (const ch of s) n += codePointCells(ch.codePointAt(0) ?? 0)
+  return n
+}
+
+/** 按展示宽度截断：优先在自然断点收尾，去掉尾部标点；不会切出半个码点。 */
+export function truncateToDisplayCells(s: string, maxCells: number = HANDOFF_TITLE_MAX_CELLS): string {
+  const text = s.trim()
+  if (!text) return ""
+  const trimTail = (x: string): string => x.replace(/[\s。！？；，、,.;:：\-—–]+$/u, "").trim()
+  if (displayCells(text) <= maxCells) return trimTail(text)
+  let cells = 0
+  let end = 0
+  let breakAt = -1
+  let breakCells = 0
+  for (const ch of text) {
+    const w = codePointCells(ch.codePointAt(0) ?? 0)
+    if (cells + w > maxCells) break
+    cells += w
+    end += ch.length
+    if (/[。！？；，、,.;:：\s]/u.test(ch)) {
+      breakAt = end
+      breakCells = cells
+    }
+  }
+  // 断点太靠前就不用它，硬切在宽度上限处
+  const cut = breakAt > 0 && breakCells >= Math.ceil(maxCells * 0.5) ? breakAt : end
+  return trimTail(text.slice(0, cut))
+}
+
+/**
+ * 从交接摘要里提取一句话标题（不含 Markdown 记号、不含模板小节名）。
+ * 提取不出（空、只有小节名、纯符号）时返回 null —— 由平台自己给会话取名，
+ * 不得回落到固定名称。
+ */
+export function deriveHandoffTitle(summary: string | null | undefined): string | null {
+  if (!summary) return null
+  for (const raw of String(summary).replace(/\r\n?/g, "\n").split("\n")) {
+    let s = raw.trim()
+    if (!s) continue
+    if (/^[-=_*]{3,}$/u.test(s)) continue // 分隔线
+    s = s.replace(/^#{1,6}\s*/u, "") // 标题井号
+    s = s.replace(/^[-*+]\s+/u, "") // 列表符号
+    s = s.replace(/^\d+[.)、]\s*/u, "") // 编号
+    s = s.replace(/^>\s*/u, "") // 引用
+    s = s.replace(/^\[HANDOFF\]\s*/u, "") // 交接标记
+    s = s.replace(/^【[^】]*】\s*/u, "") // 中文方括号包装
+    s = s.replace(/!\[[^\]]*\]\([^)]*\)/gu, "") // 图片
+    s = s.replace(/\[([^\]]+)\]\([^)]*\)/gu, "$1") // 链接保留文字
+    s = s.replace(/\*\*([^*]+)\*\*/gu, "$1") // 粗体
+    s = s.replace(/`([^`]+)`/gu, "$1") // 行内代码
+    s = s.replace(/^\s*[-—–:：]+\s*/u, "")
+    s = s.trim()
+    if (!s) continue
+    const bare = s.replace(/[：:]\s*$/u, "").trim()
+    if (HANDOFF_SECTION_NAMES.has(bare)) continue
+    if (!/[\p{L}\p{N}]/u.test(bare)) continue // 纯符号不算
+    const title = truncateToDisplayCells(bare)
+    if (title.length < 2) continue
+    return title
+  }
+  return null
+}
+
+/** deriveHandoffTitle 的永不抛错包装（取名失败不得影响交接）。 */
+function safeHandoffTitle(summary: unknown): string | null {
+  try {
+    return deriveHandoffTitle(typeof summary === "string" ? summary : "")
+  } catch {
+    return null
+  }
+}
+
 /** 哨兵匹配：首行或第二行整行精确相等。 */
 function matchSentinel(text: string): string | null {
   const lines = text.split(/\r?\n/)
@@ -532,6 +646,19 @@ export function isSafeGitRef(ref: string): boolean {
 }
 
 // ===================== 工具定义 =====================
+
+/**
+ * 工具通道（opencode v2.0.32 实测结论，源码见二进制里的 Tool.snapshot）：
+ *   - `options.codemode === false`  → 进模型直调清单（definitions）；
+ *   - `options.codemode !== false`  → 进 Code Mode 目录（execute 沙箱里可调），默认走这条；
+ *   - 两条通道 **互斥**：平台没有"同一个工具同时进两边"的开关；`pinned` 只表示"目录里永远列出、
+ *     不被 2000 预算裁掉"（气泡宽度），不是"可直调"。
+ * 所以 grit 统一走 Code Mode + pinned：目录稳定可见，且 7 份完整 schema 不必常驻提示词。
+ * 需要把某个工具改成直调时，把它的名字加进 DIRECT_TOOLS 即可（注册数据仍是唯一来源）——
+ * 这是一次显式取舍，不是隐形缺失。
+ */
+const TOOL_OPTIONS = { codemode: true, pinned: true } as const
+const DIRECT_TOOLS = new Set<string>([])
 
 export interface ToolDefLite {
   name: string
@@ -1220,6 +1347,7 @@ const gritDefinition = Plugin.define({
           name: def.name,
           description: def.description,
           input: def.input,
+          options: DIRECT_TOOLS.has(def.name) ? { codemode: false } : TOOL_OPTIONS,
           execute: async (input: Record<string, unknown>, toolCtx: any): Promise<{ content: string }> => {
             const sid: string = (toolCtx?.sessionID as string) ?? currentSession ?? ""
             switch (def.name) {
@@ -1257,9 +1385,20 @@ const gritDefinition = Plugin.define({
                 return { content: `克隆完成：${dest}\n可用 read/grep/glob 检查该目录下的源码。` }
               }
               case "handoff": {
-                const summary = withHandoffMarker(typeof input?.summary === "string" ? input.summary : "", leanHandoffSummary())
+                const authored = typeof input?.summary === "string" ? input.summary : ""
+                const summary = withHandoffMarker(authored, leanHandoffSummary())
+                // 标题由摘要内容生成；提取不出就交给系统自动命名（不回落固定名称）。
+                const title = safeHandoffTitle(authored)
                 try {
-                  const created = await ctx.session.create({ title: "会话交接", location: { directory } })
+                  let created: any
+                  try {
+                    created = await ctx.session.create({ ...(title ? { title } : {}), location: { directory } })
+                  } catch (e) {
+                    // 标题不能危及交接：带标题创建失败时，退回"不带标题"再创建一次（系统自动命名）。
+                    if (!title) throw e
+                    log("a", `HANDOFF title rejected, retry without title: ${e instanceof Error ? e.message : String(e)}`)
+                    created = await ctx.session.create({ location: { directory } })
+                  }
                   const newID = (created as any)?.id
                   if (!newID) return { content: `交接失败：创建新会话返回异常 (${JSON.stringify(created).slice(0, 200)})` }
                   await ctx.session.prompt({ sessionID: newID, text: summary })
@@ -1486,6 +1625,10 @@ const gritPlugin = Object.assign(gritDefinition, {
   systemTimeLine,
   withHandoffMarker,
   leanHandoffSummary,
+  HANDOFF_TITLE_MAX_CELLS,
+  displayCells,
+  truncateToDisplayCells,
+  deriveHandoffTitle,
   matchSentinel,
   assembleContract,
   disciplineBlock,

@@ -247,6 +247,7 @@ process.env.GRIT_HOME = tmpHome2
 
 const SID = "ses_itest_1"
 const prompts: { sessionID: string; text: string }[] = []
+const createdInputs: any[] = []
 let failNextPrompt = false
 const hooks: Record<string, (e: any) => unknown> = {}
 const tools2 = new Map<string, any>()
@@ -262,7 +263,7 @@ const fakeCtx2 = {
       prompts.push(arg)
       return {}
     },
-    create: async () => ({ id: "ses_new" }),
+    create: async (input: any) => { createdInputs.push(input); return { id: "ses_new" } },
   },
   model: { list: async () => [] },
   tool: {
@@ -364,6 +365,54 @@ ok(!gritPlugin.messageText(msgsMention[msgsMention.length - 1]).includes("[GRIT:
 failNextPrompt = true
 const enterFail = await tools2.get("ulw_enter").execute({ goal: "注入失败兜底" }, { sessionID: SID })
 ok(String(enterFail.content).includes("注入失败") && String(enterFail.content).includes("<!-- GRIT:ULW:CONTRACT -->"), "进入：prompt 注入失败时退回工具结果兜底")
+
+// ===================== §10 工具通道 & 交接标题 =====================
+
+// 每个 grit 工具都带 codemode+pinned（平台 v2.0.32 无双通道开关，见 grit.ts 的 TOOL_OPTIONS）
+for (const name of ["context_usage", "system_time", "clone_repo", "handoff", "profile", "ulw_enter", "ulw_exit"]) {
+  const def = tools2.get(name)
+  ok(Boolean(def) && def.options?.codemode === true && def.options?.pinned === true, `工具通道：${name} 带 codemode+pinned`)
+}
+
+// 摘要只有模板小节名 → 提不出标题（交给系统自动命名，不回落固定名称）
+ok(
+  gritPlugin.deriveHandoffTitle("## 1. 任务与目标\n## 2. 当前状态\n## 3. 已确认的事实（无需重新探索）\n- 无") === null,
+  "标题：只有小节名时不硬造标题",
+)
+
+// 跳过小节名 + 剥 markdown 记号 + 按展示宽度收在自然断点（正好落到验收例子的短语上）
+ok(
+  gritPlugin.deriveHandoffTitle("## 2. 当前状态\n**星网 AI 取数正确性测试与时延分布手册** 已写完，待复核。") ===
+    "星网 AI 取数正确性测试与时延分布手册",
+  "标题：跳过小节名、剥掉 markdown 记号、超宽时收在自然断点",
+)
+
+// 展示宽度受限（40 格，CJK 计 2）
+const longSummary = "这是一段非常长的交接摘要内容" + "很长".repeat(40)
+const longTitle = gritPlugin.deriveHandoffTitle(longSummary)
+ok(
+  Boolean(longTitle) && gritPlugin.displayCells(longTitle!) <= gritPlugin.HANDOFF_TITLE_MAX_CELLS,
+  "标题：超过展示宽度时按宽度截断",
+)
+
+// 空 / 纯符号 → null（交给系统命名）
+ok(
+  gritPlugin.deriveHandoffTitle("") === null && gritPlugin.deriveHandoffTitle("—— ——") === null,
+  "标题：空摘要或纯符号时返回 null",
+)
+
+// ---- handoff：标题按摘要内容生成；提取不出就不传 title（交给系统自动命名） ----
+const handoffSummary = "## 1. 任务与目标\n## 2. 当前状态\n**星网 AI 取数正确性测试与时延分布手册** 已写完，待复核。"
+const handoffRes = await tools2.get("handoff").execute({ summary: handoffSummary }, { sessionID: SID })
+const createdWithTitle = createdInputs[createdInputs.length - 1]
+ok(createdWithTitle?.title === "星网 AI 取数正确性测试与时延分布手册", "交接：新会话标题取自摘要内容（不是固定名称）")
+ok(String(handoffRes.content).includes("ses_new"), "交接：创建新会话 + 注入摘要后返回新会话号")
+ok(String(prompts[prompts.length - 1]?.text).includes("[HANDOFF]"), "交接：摘要以 [HANDOFF] 标记注入新会话")
+
+const emptyRes = await tools2.get("handoff").execute({}, { sessionID: SID })
+const createdNoTitle = createdInputs[createdInputs.length - 1]
+ok(createdNoTitle !== undefined && !("title" in createdNoTitle), "交接：提不出标题时不传 title（交给系统自动命名）")
+ok(String(emptyRes.content).includes("ses_new"), "交接：空摘要也能完成交接（标题不影响创建）")
 
 // ===================== 结果 =====================
 console.log(`\n${passed} passed, ${failed} failed`)
