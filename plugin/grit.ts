@@ -1391,18 +1391,19 @@ const gritDefinition = Plugin.define({
                 const title = safeHandoffTitle(authored)
                 // 继承当前会话的 agent / model：不传的话新会话会落到平台默认
                 // （常见结果是换了个模型或供应商，交接过去的会话一上来就跑偏）。
-                const inherited: { agent?: string; model?: { providerID: string; modelID: string } } = {}
+                // 注意 Model.Ref 的形状是 { id, providerID }（不是 modelID）。
+                const inherited: { agent?: string; model?: { providerID: string; id: string } } = {}
                 if (typeof toolCtx?.agent === "string" && toolCtx.agent) inherited.agent = toolCtx.agent
                 const lastRef = SHARED.lastModels.get(sid)
                 if (lastRef?.providerID && lastRef?.modelID) {
-                  inherited.model = { providerID: lastRef.providerID, modelID: lastRef.modelID }
+                  inherited.model = { providerID: lastRef.providerID, id: lastRef.modelID }
                 } else {
                   // 兜底：本会话还没走过一轮模型请求时，读会话行上记的 model/agent
                   try {
                     const info: any = await ctx.session.get({ sessionID: sid })
                     const m = info?.model
                     if (m && typeof m.providerID === "string" && typeof m.id === "string") {
-                      inherited.model = { providerID: m.providerID, modelID: m.id }
+                      inherited.model = { providerID: m.providerID, id: m.id }
                     }
                     if (!inherited.agent && typeof info?.agent === "string") inherited.agent = info.agent
                   } catch {
@@ -1410,20 +1411,41 @@ const gritDefinition = Plugin.define({
                   }
                 }
                 try {
-                  let created: any
-                  try {
-                    created = await ctx.session.create({ ...inherited, ...(title ? { title } : {}), location: { directory } })
-                  } catch (e) {
-                    // 标题不能危及交接：带标题创建失败时，退回"不带标题"再创建一次（系统自动命名）。
-                    if (!title) throw e
-                    log("a", `HANDOFF title rejected, retry without title: ${e instanceof Error ? e.message : String(e)}`)
-                    created = await ctx.session.create({ ...inherited, location: { directory } })
+                  // 创建会话：优先"继承值 + 标题"；平台不接受时逐级退回，
+                  // 保证标题/模型这类附加信息永远不会让交接本身失败。
+                  const sig = (x: any): string =>
+                    [x.agent ?? "", x.model ? `${x.model.providerID}/${x.model.id}` : "", x.title ?? ""].join("|")
+                  const plan: Array<{ label: string; input: any }> = []
+                  for (const [label, input] of [
+                    ["inherit+title", { ...inherited, ...(title ? { title } : {}), location: { directory } }],
+                    ["title", { ...(title ? { title } : {}), location: { directory } }],
+                    ["bare", { location: { directory } }],
+                  ] as Array<[string, any]>) {
+                    if (!plan.some((p) => sig(p.input) === sig(input))) plan.push({ label, input })
                   }
+                  let created: any
+                  let lastErr: unknown
+                  for (const attempt of plan) {
+                    try {
+                      created = await ctx.session.create(attempt.input)
+                      if (attempt.label !== plan[0]!.label) {
+                        log(
+                          "a",
+                          `HANDOFF create fell back to ${attempt.label}: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+                        )
+                      }
+                      break
+                    } catch (e) {
+                      lastErr = e
+                      log("a", `HANDOFF create[${attempt.label}] failed: ${e instanceof Error ? e.message : String(e)}`)
+                    }
+                  }
+                  if (!created) return { content: `交接失败：${lastErr instanceof Error ? lastErr.message : String(lastErr)}` }
                   const newID = (created as any)?.id
                   log(
                     "c",
                     `HANDOFF new=${newID ?? "?"} agent=${inherited.agent ?? "-"} model=${
-                      inherited.model ? `${inherited.model.providerID}/${inherited.model.modelID}` : "-"
+                      inherited.model ? `${inherited.model.providerID}/${inherited.model.id}` : "-"
                     }`,
                   )
                   if (!newID) return { content: `交接失败：创建新会话返回异常 (${JSON.stringify(created).slice(0, 200)})` }

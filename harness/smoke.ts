@@ -248,6 +248,7 @@ process.env.GRIT_HOME = tmpHome2
 const SID = "ses_itest_1"
 const prompts: { sessionID: string; text: string }[] = []
 const createdInputs: any[] = []
+let rejectModel = false
 let failNextPrompt = false
 const hooks: Record<string, (e: any) => unknown> = {}
 const tools2 = new Map<string, any>()
@@ -263,7 +264,11 @@ const fakeCtx2 = {
       prompts.push(arg)
       return {}
     },
-    create: async (input: any) => { createdInputs.push(input); return { id: "ses_new" } },
+    create: async (input: any) => {
+      if (rejectModel && input?.model) throw new Error('Missing key at ["model"]["id"]')
+      createdInputs.push(input)
+      return { id: "ses_new" }
+    },
   },
   model: { list: async () => [] },
   tool: {
@@ -427,8 +432,18 @@ const inherited = createdInputs[createdInputs.length - 1]
 ok(
   inherited?.agent === "build" &&
     inherited?.model?.providerID === "opencode-go" &&
-    inherited?.model?.modelID === "deepseek-v4.1-flash",
-  "交接：新会话继承当前 agent/model（不再落回平台默认）",
+    inherited?.model?.id === "deepseek-v4.1-flash",
+  "交接：新会话继承当前 agent/model（Model.Ref 形状 = { id, providerID }）",
+)
+
+// 附加信息不许拖垮交接：平台拒绝继承的 model 时，逐级退回且交接仍成功
+rejectModel = true
+const fallbackRes = await tools2.get("handoff").execute({ summary: "## 1. 任务与目标\n继续做 Z" }, { sessionID: SID, agent: "build" })
+const fallbackInput = createdInputs[createdInputs.length - 1]
+rejectModel = false
+ok(
+  String(fallbackRes.content).includes("ses_new") && fallbackInput !== undefined && !("model" in fallbackInput),
+  "交接：平台不接受继承的 model 时逐级退回，交接本身仍成功",
 )
 
 // ===================== 结果 =====================
