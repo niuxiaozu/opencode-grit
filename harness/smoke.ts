@@ -414,6 +414,23 @@ const createdNoTitle = createdInputs[createdInputs.length - 1]
 ok(createdNoTitle !== undefined && !("title" in createdNoTitle), "交接：提不出标题时不传 title（交给系统自动命名）")
 ok(String(emptyRes.content).includes("ses_new"), "交接：空摘要也能完成交接（标题不影响创建）")
 
+// 继承：新会话带着当前会话的 agent/model 创建（否则会落回平台默认，出现"交接后换了模型"）
+hooks.context!({
+  agent: "build",
+  sessionID: SID,
+  system: [],
+  messages: [{ role: "user", content: [{ type: "text", text: "继续" }] }],
+  model: { providerID: "opencode-go", id: "deepseek-v4.1-flash" },
+})
+await tools2.get("handoff").execute({ summary: "## 1. 任务与目标\n继续做 Y" }, { sessionID: SID, agent: "build" })
+const inherited = createdInputs[createdInputs.length - 1]
+ok(
+  inherited?.agent === "build" &&
+    inherited?.model?.providerID === "opencode-go" &&
+    inherited?.model?.modelID === "deepseek-v4.1-flash",
+  "交接：新会话继承当前 agent/model（不再落回平台默认）",
+)
+
 // ===================== 结果 =====================
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

@@ -1389,17 +1389,43 @@ const gritDefinition = Plugin.define({
                 const summary = withHandoffMarker(authored, leanHandoffSummary())
                 // 标题由摘要内容生成；提取不出就交给系统自动命名（不回落固定名称）。
                 const title = safeHandoffTitle(authored)
+                // 继承当前会话的 agent / model：不传的话新会话会落到平台默认
+                // （常见结果是换了个模型或供应商，交接过去的会话一上来就跑偏）。
+                const inherited: { agent?: string; model?: { providerID: string; modelID: string } } = {}
+                if (typeof toolCtx?.agent === "string" && toolCtx.agent) inherited.agent = toolCtx.agent
+                const lastRef = SHARED.lastModels.get(sid)
+                if (lastRef?.providerID && lastRef?.modelID) {
+                  inherited.model = { providerID: lastRef.providerID, modelID: lastRef.modelID }
+                } else {
+                  // 兜底：本会话还没走过一轮模型请求时，读会话行上记的 model/agent
+                  try {
+                    const info: any = await ctx.session.get({ sessionID: sid })
+                    const m = info?.model
+                    if (m && typeof m.providerID === "string" && typeof m.id === "string") {
+                      inherited.model = { providerID: m.providerID, modelID: m.id }
+                    }
+                    if (!inherited.agent && typeof info?.agent === "string") inherited.agent = info.agent
+                  } catch {
+                    /* 读不到就交给平台默认 */
+                  }
+                }
                 try {
                   let created: any
                   try {
-                    created = await ctx.session.create({ ...(title ? { title } : {}), location: { directory } })
+                    created = await ctx.session.create({ ...inherited, ...(title ? { title } : {}), location: { directory } })
                   } catch (e) {
                     // 标题不能危及交接：带标题创建失败时，退回"不带标题"再创建一次（系统自动命名）。
                     if (!title) throw e
                     log("a", `HANDOFF title rejected, retry without title: ${e instanceof Error ? e.message : String(e)}`)
-                    created = await ctx.session.create({ location: { directory } })
+                    created = await ctx.session.create({ ...inherited, location: { directory } })
                   }
                   const newID = (created as any)?.id
+                  log(
+                    "c",
+                    `HANDOFF new=${newID ?? "?"} agent=${inherited.agent ?? "-"} model=${
+                      inherited.model ? `${inherited.model.providerID}/${inherited.model.modelID}` : "-"
+                    }`,
+                  )
                   if (!newID) return { content: `交接失败：创建新会话返回异常 (${JSON.stringify(created).slice(0, 200)})` }
                   await ctx.session.prompt({ sessionID: newID, text: summary })
                   const st = loadState(sid)
