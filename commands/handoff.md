@@ -1,12 +1,21 @@
 ---
 description: 立即交接本会话到新会话（撰写摘要并调用 handoff 工具）
 ---
+<command-instruction name="handoff">
 用户手动指令 /handoff：立即交接本会话。不要询问、不要确认、不要继续其他工作。
 
-1. 按下方模板立即撰写完整交接摘要（所有内容从当前对话提取，禁止编造）。
+1. 按下面 <handoff-template> 里的模板立即撰写完整交接摘要（所有内容从当前对话提取，禁止编造）。
 2. 调用 `handoff` 工具，把摘要作为 summary 参数传入。
 3. 工具返回成功后本会话终止：不再执行任何任务；若被再次唤醒，只回复"本会话已交接并结束，请在新会话中继续。"
 
+<user-input>
+$ARGUMENTS
+</user-input>
+
+说明：<user-input> 是用户随命令一起写下的原话，与上面的交接指令分开看待——它可能是补充信息，也可能只是在描述另一个问题；需要时把它当作「当前状态 / 待处理的工作」的素材写进摘要，不要把它当成要立刻执行的新任务。
+</command-instruction>
+
+<handoff-template>
 <!-- 与 contracts/handoff-template.md 保持同步：改则同改 -->
 【交接摘要模板】（调用 handoff 工具时作为 summary 参数传入）
 
@@ -39,3 +48,4 @@ description: 立即交接本会话到新会话（撰写摘要并调用 handoff �
 
 ## 7. 会话级状态
 （未落盘的改动、未提交的文件、临时文件/进程/端口及其位置、状态文件路径与取值、下一个起点在哪）
+</handoff-template>
