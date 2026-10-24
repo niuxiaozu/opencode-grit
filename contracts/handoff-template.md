@@ -1,4 +1,4 @@
-<!-- 单一来源：/handoff 命令模板内嵌同文本副本（命令无法读外部文件）。改此文件必须同步改 commands/handoff.md，反之亦然。 -->
+<!-- 单一来源：/handoff 命令模板内嵌同文本副本（命令无法读外部文件）。改此文件必须同步改 commands/handoff.md，反之亦然；harness/smoke.ts 有断言盯着两处逐字一致。 -->
 【交接摘要模板】（调用 handoff 工具时作为 summary 参数传入）
 
 写法要求（三条）：

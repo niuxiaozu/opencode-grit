@@ -16,7 +16,7 @@ $ARGUMENTS
 </command-instruction>
 
 <handoff-template>
-<!-- 与 contracts/handoff-template.md 保持同步：改则同改 -->
+<!-- 与 contracts/handoff-template.md 保持同步：改则同改（harness/smoke.ts 有断言盯着两处逐字一致） -->
 【交接摘要模板】（调用 handoff 工具时作为 summary 参数传入）
 
 写法要求（三条）：

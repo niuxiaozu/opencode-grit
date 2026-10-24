@@ -400,6 +400,23 @@ for (const name of ["context_usage", "system_time", "clone_repo", "handoff", "pr
   ok(Boolean(def) && def.options?.codemode === true && def.options?.pinned === true, `工具通道：${name} 带 codemode+pinned`)
 }
 
+// 交接模板是双写：命令里内嵌一份（命令读不到外部文件）、contracts/ 里一份。两处必须逐字一致，
+// 否则改了一处另一处悄悄过期，而两处都会进上下文——没人会发现用的是哪一版。
+const handoffTemplateFile = readFileSync(join(REPO, "contracts", "handoff-template.md"), "utf8")
+const handoffCommandFile = readFileSync(join(REPO, "commands", "handoff.md"), "utf8")
+const stripLeadComment = (s: string) => s.replace(/^\s*<!--[\s\S]*?-->\s*/, "").replace(/\r\n/g, "\n").trim()
+// 命令正文里也提到过 <handoff-template> 这个词，所以按“最后一对标签”取真正内嵌的那份
+const embeddedTemplate = (() => {
+  const open = handoffCommandFile.lastIndexOf("<handoff-template>")
+  const close = handoffCommandFile.lastIndexOf("</handoff-template>")
+  return open >= 0 && close > open ? handoffCommandFile.slice(open + "<handoff-template>".length, close) : ""
+})()
+ok(
+  embeddedTemplate.includes("## 7. 会话级状态") &&
+    stripLeadComment(embeddedTemplate) === stripLeadComment(handoffTemplateFile),
+  "交接模板：commands/handoff.md 内嵌副本与 contracts/handoff-template.md 逐字一致（防双写漂移）",
+)
+
 // 摘要只有模板小节名 → 提不出标题（交给系统自动命名，不回落固定名称）
 ok(
   gritPlugin.deriveHandoffTitle("## 1. 任务与目标\n## 2. 当前状态\n## 3. 已确认的事实（无需重新探索）\n- 无") === null,
