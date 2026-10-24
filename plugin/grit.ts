@@ -71,7 +71,7 @@ const START_HINT = [
   "",
   "目标：取用户最近一次提出的任务——在最近几轮里找，未必是最后一条消息；不要取更早的、范围更大的全局目标；两者不一致时以最近为准。",
   "然后调用 ulw_enter 工具，把目标作为 goal 传入。",
-  "调用完先停下：本轮只回一句「等契约」，不要开始干活；契约消息到达后再动手（契约末尾会提示你开始）。",
+  "调用完先停下：本轮只回一句「等契约」，不要开始干活；契约消息到达后再动手（注入消息末尾会提示你开始）。",
   "</grit-inject>",
 ].join("\n")
 const SENTINEL_EXIT = "[GRIT:ULW:EXIT]"
@@ -350,7 +350,9 @@ function matchSentinel(text: string): string | null {
   return null
 }
 
-/** 契约拼装：契约文件原样使用（第一行标题即识别标记），不再套注释/包装标签。 */
+/** 契约拼装：契约文件原样使用（第一行标题即识别标记），不再套注释/包装标签。
+ *  「现在请开始工作」不写进契约正文：契约是稳定规则（同一份还在压缩后重投），
+ *  那句话只对"刚收到契约的这一轮"成立，属于投递动作，所以由 contractNotice 的信封补。 */
 function assembleContract(ulwText: string): string {
   return ulwText.trim()
 }
@@ -397,7 +399,7 @@ function contractNotice(contract: string, objective: string): string {
     "以下是持续工作模式（ULW）的纪律契约，自本条消息起生效，直到你调用 ulw_exit 退出。",
     obj ? `目标：${obj}` : "",
   ].filter(Boolean).join("\n")
-  return `${head}\n\n${contract}\n</system-reminder>`
+  return `${head}\n\n${contract}\n\n契约到此结束。现在请开始工作。\n</system-reminder>`
 }
 
 /** 「已退出」提醒：两条退出路径共用同一段文本，由账本标记驱动、贴一次即清。 */
