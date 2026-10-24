@@ -103,7 +103,7 @@ npm run verify  # check + test + 部署一致性：仓库与本机副本逐字�
 
 活体 smoke（人工，见 DESIGN-v3 §11 V-9）：`/ulw` → 模型调 `ulw_enter` 声明目标 → 契约以一条真消息注入（工具只回短确认）→ 纪律块与激活标记出现 → 执行结束自动续跑 → 模型调 `ulw_exit` 停止 → 用户 `/ulw-exit` 确定性停止 → `/profile` 切换（agents 记录热更新）→ 压缩完成后由 `session.compaction.ended` 重注入契约。
 
-无头实测（`opencode run`）的两个坑：①**不触发 prompt 钩子**——消息里写 `[GRIT:ULW:START]` 不会被改写，`/ulw` 入口只能在 TUI 里验；②**不派发 `session.execution.succeeded`**——日志里没有 `EDGE`，续跑链路也验不了。无头只适合验「`ulw_enter` → 契约 steer 投递 → 模型接着干」这一段：直接让模型调 `ulw_enter` 即可（2026-10-24 实测：ENTER→ENTER-INJECT 5ms，契约在同一轮内到达，模型随即按契约写完成条件并做完，26 秒收尾，无卡顿）。
+无头实测（`opencode run`）的两个坑：①**不触发 prompt 钩子**——消息里写 `[GRIT:ULW:START]` 不会被改写，`/ulw` 入口只能在 TUI 里验；②**不派发 `session.execution.succeeded`**——日志里没有 `EDGE`，续跑链路也验不了。无头只适合验「`ulw_enter` → 契约 steer 投递 → 模型接着干」这一段：直接让模型调 `ulw_enter` 即可（2026-10-24 实测：ENTER→ENTER-INJECT 5ms，契约在同一轮内到达，模型随即写完成标准并做完，26 秒收尾，无卡顿）。
 
 ## 边界与互斥
 

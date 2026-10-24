@@ -315,6 +315,11 @@ const ulwContractText = readFileSync(join(import.meta.dirname ?? ".", "..", "con
 ok(ulwContractText.includes("ulw_exit"), "契约里包含退出说明（ulw_exit）")
 ok(cn.includes("契约到此结束。现在请开始工作。") && cn.trimEnd().endsWith("现在请开始工作。\n</system-reminder>"), "投递信封末尾有「开始工作」指令（由插件加在契约正文之后）")
 ok(!ulwContractText.includes("现在请开始工作") && !ulwContractText.includes("## 现在开始"), "契约正文里没有启动指令（规则与「现在开始」分离）")
+const ulwSections = [...ulwContractText.matchAll(/^## (.+)$/gm)].map((m) => m[1])
+ok(
+  JSON.stringify(ulwSections) === JSON.stringify(["这是什么", "完成与证据", "做事方式", "进度", "收尾", "上下文过长时", "交接摘要"]),
+  `契约小节结构与顺序固定（改标题要有意为之）：${ulwSections.join(" / ")}`,
+)
 
 // context 钩子（激活中）：只贴每轮标记，不重贴契约（历史里已有契约时不追加契约块）
 const msgsActive: any[] = [{ role: "user", content: [{ type: "text", text: "继续" }, { type: "text", text: "# 持续工作模式（ULW）· 纪律契约\n契约\n# 持续工作模式（ULW）· 纪律契约" }] }]
