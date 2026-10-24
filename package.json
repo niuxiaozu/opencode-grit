@@ -9,7 +9,8 @@
     "uninstall": "node scripts/install.mjs uninstall",
     "profile": "node scripts/grit.mjs",
     "check": "tsc --noEmit",
-    "test": "node harness/smoke.ts"
+    "test": "node harness/smoke.ts",
+    "verify": "npm run check && npm test && node scripts/verify-deploy.mjs"
   },
   "devDependencies": {
     "@opencode/plugin": "latest",

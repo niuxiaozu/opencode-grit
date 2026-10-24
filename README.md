@@ -98,6 +98,7 @@ grit profile strict                # 手动切某 profile（改 active 指针 + 
 ```bash
 npm run check   # tsc --noEmit
 npm test        # 确定性冒烟：纯函数/哨兵/块/消息解析(指纹/工具循环)/续跑门矩阵/记录物化/插件形态(7 工具)
+npm run verify  # check + test + 部署一致性：仓库与本机副本逐字节比对、agents 记录体检（改完忘装会在这里红）
 ```
 
 活体 smoke（人工，见 DESIGN-v3 §11 V-9）：`/ulw` → 模型调 `ulw_enter` 声明目标 → 契约以一条真消息注入（工具只回短确认）→ 纪律块与激活标记出现 → 执行结束自动续跑 → 模型调 `ulw_exit` 停止 → 用户 `/ulw-exit` 确定性停止 → `/profile` 切换（agents 记录热更新）→ 压缩完成后由 `session.compaction.ended` 重注入契约。
