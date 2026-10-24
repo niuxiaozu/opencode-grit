@@ -46,8 +46,11 @@
 6. **多实例共享状态（修重复注入）**：插件会被 OpenCode 多次加载；实测**模块级变量在重复 import 时仍各一份**，导致同毫秒 8 份 COUNTDOWN、重复 INJECT。改为把 `stateCache/counters/countdownTimers/lastTokens/inflight` 挂到 **`globalThis`**（进程级唯一）；`loadState` 按 mtime 感知磁盘变化；`doInject` 注入前后都复核新鲜状态（防陈旧快照复活退出）；`handleIdle` 加 inflight + countdown-pending 双重去重；`exitUlw` early-return 也写日志。
 7. **注入分两条通道（保护前缀缓存）**：**稳定内容**——角色纪律（不随会话变化）→ 追加到**系统提示词**（同内容同位置，前缀缓存不受影响）；**会话中触发的动态内容**——激活标记 / 授权与退出提醒 / 压缩后契约恢复 → 以独立带标签块（`<grit-inject>…</grit-inject>`、契约哨兵）追加到**消息通道**（末条 user 消息，只动尾部）。§7 中"合成消息/系统提醒块"的表述以本节为准。
 8. **移除 profile 热参数（机制 C 的 `params`）**：删掉插件里写 `event.options.temperature/topP/variant` 的整段、6 个 profile 的 `params` 字段、`validateProfile` 的 params 校验，以及 README/DESIGN 相关描述。理由：①6 个 profile 的 `params.apply` 全为 `false` → 从未生效（死代码）；②`variant` 根本不是 v2 认的生成参数键（v2 只认 maxTokens/temperature/topP/topK/frequencyPenalty/presencePenalty/seed/stop）；③这类参数在 v2 有原生落点（`agents` 记录的 `request`）。`profile` 工具（list/show/switch）保留。
+9. **进入方式再简化（v3.3）**：`/ulw` 的标记由 prompt 钩子**从用户消息里移除**，替换为带标签的提示「整理出目标并调用 ulw_enter」；context 钩子里那条「授权提醒」删除；`ulw_enter` **不再校验授权标识**（§0.2-2 的拦截机制作废）。
 
-哨兵：`[GRIT:ULW:START]`（授权）、`[GRIT:ULW:EXIT]`（用户退出）、`[GRIT:ULW:CONTINUE]`（防回声）、`[GRIT:ULW:ACTIVE]`（每轮标记）、`[GRIT:ULW:ARMED]`（授权提醒）、`<!-- GRIT:ULW:CONTRACT -->`。§6A/§7 中"合成消息注入契约""目标=命令参数"等表述以本节为准。
+10. **契约投递 = steer + 不 await（v3.3）**：`ctx.session.prompt` 用默认的 steer（在当前这一轮的下一个安全步边界投递，不必等整轮结束）；调用处是 `void … .then().catch()`，**绝不 await**——await 会让工具结果等投递完成，而投递要等工具返回之后的步边界，两者互等（2026-10-24T02:25 实测卡住约 1.5 分钟，按 Esc 才恢复）。续跑注入（`doInject`）在空闲路径上，await 不受此限。
+
+哨兵（v3.3 起多数改成自然文本，模型能直接读懂）：`[GRIT:ULW:START]`（`/ulw` 命令标记，prompt 钩子识别后移除，不进历史）、`[GRIT:ULW:EXIT]`（用户退出）、`（grit 自动续跑提示）`（防回声）、`grit 状态：持续工作模式进行中`（每轮标记）、`grit 状态：持续工作模式已退出`（退出提醒）、`# 持续工作模式（ULW）· 纪律契约`（契约首行，兼作"契约是否还在历史里"的识别标记）。§6A/§7 中"合成消息注入契约""目标=命令参数"等表述以本节为准。
 
 ---
 

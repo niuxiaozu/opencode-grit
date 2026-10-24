@@ -13,8 +13,8 @@
 | agent 不再写 `system`，改为 **`agents` 配置记录**（只写 mode/description/model/permissions） | OpenCode v2 里设 `agent.system` 会【整段替换】基础提示词，并跳过 provider 变体与工具指导；省略 system 才能保留内置 prompt（如 explore 的 `PROMPT_EXPLORE`） |
 | 纪律正文移到 `contracts/discipline/*.md`，由插件**追加到系统提示词**（稳定内容） | 不碰原生层；内容不随会话变化、位置固定 ⇒ 前缀缓存不受影响 |
 | 注入分两条通道：**稳定内容**（角色纪律）→ 系统提示词；**会话中触发的动态项**（激活标记 / 授权与退出提醒 / 压缩后契约恢复）→ 消息通道的带标签块 | 动态项只追加到尾部消息，不动已缓存前缀；来源可区分（标签） |
-| **ULW 由工具进入/退出**：`/ulw` 消息携带授权标识，模型调 `ulw_enter(goal)`（校验标识）进入、`ulw_exit` 退出 | 文本嗅探（正则抓 `[GRIT:ULW:GOAL]`/`[GRIT:ULW:DONE]`）蹩脚且有时序问题；工具是结构化通道，目标作参数、进出显式、可幂等 |
-| **进入校验**：`ulw_enter` 校验「上一条用户消息」是否含授权标识（`/ulw` 命令携带 `[GRIT:ULW:START]`），无则拒绝并告知模型 | 防止模型误触发进入 ULW；进入必须由用户的 `/ulw` 消息触发，且插件不保存额外状态 |
+| **ULW 由工具进入/退出**：`/ulw` 的命令标记被 prompt 钩子换掉、附上「整理目标并调用 `ulw_enter`」的提示；模型调 `ulw_enter(goal)` 进入、`ulw_exit` 退出 | 文本嗅探（正则抓 `[GRIT:ULW:GOAL]`/`[GRIT:ULW:DONE]`）蹩脚且有时序问题；工具是结构化通道，目标作参数、进出显式、可幂等 |
+| **进入提示**：`/ulw` 的标记从用户消息里移除，换成带标签的「整理目标 → 调 `ulw_enter`」提示；`ulw_enter` 不再做授权拦截 | 指令就写在用户消息里，模型不用猜；代价是模型若自行调用工具不会被拒 |
 | 哨兵统一为 **`GRIT:ULW:*`**（自解释） | 旧 `grit:done:v1` 这类 `动作:v1` 单看无含义；现为「命名空间:模式:动作」 |
 | 机制 B **不再扫描 todo**，完成由模型自判（调用 `ulw_exit`） | v2 **已删除 todowrite 工具**（官方：拖慢 agent）；grit 不重做 todo |
 | **移除校准段机制** | 校准段难编写，且与 OpenCode 原生提示词机制冗余/冲突；交由原生机制承担，grit 不再注入 |
@@ -49,7 +49,7 @@
 总闸：环境变量 `GRIT_DISABLE=1`。全关 = 纯工具箱（`bare` profile 等价形态）。
 
 **进入 / 退出 / 完成**：
-- 进入：用户 `/ulw` → 该消息携带授权标识并指示模型设定目标 → 模型取「最近一次提出的任务」（在最近几轮里定位，未必是最后一条消息）调用 `ulw_enter({goal})`；插件校验「上一条用户消息」含授权标识才放行 → 插件用 `ctx.session.prompt` 把「契约 + 目标」作为一条真消息注入（落库，后续每轮都看得到），ULW 生效（无标识则拒绝并告知模型）。
+- 进入：用户 `/ulw` → prompt 钩子把命令标记去掉、附上一段带标签的提示（「整理出目标 → 调用 ulw_enter」）→ 模型取「最近一次提出的任务」（在最近几轮里定位，未必是最后一条消息）调用 `ulw_enter({goal})` → 插件用 `ctx.session.prompt` 把「契约 + 目标」作为一条真消息注入（落库，后续每轮都看得到），ULW 生效。
 - 完成：模型自判目标完成（每条判据都有真实证据）→ 调用 `ulw_exit({reason})` → 契约失效、续跑停止。
 - 用户手动退出：`/ulw-exit`（插件**确定性**关闭，不依赖模型配合）。
 
@@ -57,12 +57,12 @@
 
 | 哨兵 | 含义 |
 |---|---|
-| `[GRIT:ULW:START]` | `/ulw` 命令首行：**授权标识**，`ulw_enter` 校验「上一条用户消息」含它才允许进入（插件不拦截，按真实用户消息处理） |
+| `[GRIT:ULW:START]` | `/ulw` 命令首行：**命令标记**；prompt 钩子识别后把它从用户消息里移除，换成「整理目标并调用 `ulw_enter`」的提示（不会留在历史里） |
 | `[GRIT:ULW:EXIT]` | `/ulw-exit` 命令首行，插件据此**确定性退出** |
-| `[GRIT:ULW:CONTINUE]` | 续跑提示首行（防回声） |
-| `[GRIT:ULW:ACTIVE]` | 激活标记（`<system-reminder>` 块内，携带目标） |
-| `[GRIT:ULW:ARMED]` | 已授权未进入时的提醒（催模型调 `ulw_enter`） |
-| `<!-- GRIT:ULW:CONTRACT -->` … `<!-- /GRIT:ULW:CONTRACT -->` | 契约块首尾哨兵（prompt 钩子据此识别"插件自己发的契约消息"，不当成用户插话） |
+| `（grit 自动续跑提示）` | 续跑提示的第一行（防回声：插件据此认出"这是我自己发的"） |
+| `grit 状态：持续工作模式进行中` | 激活标记（`<system-reminder>` 块内，携带目标） |
+| `grit 状态：持续工作模式已退出` | 退出提醒（`<grit-inject>` 块内，贴一次即清） |
+| `# 持续工作模式（ULW）· 纪律契约` | 契约正文的第一行标题，同时用作"契约还在历史里"的识别标记 |
 | `<GRIT-DISCIPLINE agent="build">` | 纪律段块（按 `event.agent` 追加；与 ULW 无关，常驻） |
 
 ## profile 切换
@@ -102,6 +102,8 @@ npm test        # 确定性冒烟：纯函数/哨兵/块/消息解析(指纹/工
 
 活体 smoke（人工，见 DESIGN-v3 §11 V-9）：`/ulw` → 模型调 `ulw_enter` 声明目标 → 契约以一条真消息注入（工具只回短确认）→ 纪律块与激活标记出现 → 执行结束自动续跑 → 模型调 `ulw_exit` 停止 → 用户 `/ulw-exit` 确定性停止 → `/profile` 切换（agents 记录热更新）→ 压缩完成后由 `session.compaction.ended` 重注入契约。
 
+无头实测（`opencode run`）的两个坑：①**不触发 prompt 钩子**——消息里写 `[GRIT:ULW:START]` 不会被改写，`/ulw` 入口只能在 TUI 里验；②**不派发 `session.execution.succeeded`**——日志里没有 `EDGE`，续跑链路也验不了。无头只适合验「`ulw_enter` → 契约 steer 投递 → 模型接着干」这一段：直接让模型调 `ulw_enter` 即可（2026-10-24 实测：ENTER→ENTER-INJECT 5ms，契约在同一轮内到达，模型随即按契约写完成条件并做完，26 秒收尾，无卡顿）。
+
 ## 边界与互斥
 
 - 与 OpenChamber / opencode-worktime / auto-handoff 技能共存，不重复建设。**约定互斥**：OpenChamber goal 驱动的会话不要敲 `/ulw`（两套续跑会叠加）；冲突时 `features.continuation.enabled=false` 或切 `bare` 一键关。
@@ -109,4 +111,4 @@ npm test        # 确定性冒烟：纯函数/哨兵/块/消息解析(指纹/工
 
 ## 默认裁定（可改，见 DESIGN-v3 §15）
 
-handoff 阈值 = 双阶梯（≥45% 立即；≥25% 条件交接）；max-failures 暂停 10min 自动解除；注入物 TUI 可见（透明可审计）；契约中文；进入 = 上一条用户消息含授权标识 + 模型调 `ulw_enter`；完成 = 模型调 `ulw_exit`。
+handoff 阈值 = 双阶梯（≥45% 立即；≥25% 条件交接）；max-failures 暂停 10min 自动解除；注入物 TUI 可见（透明可审计）；契约中文；进入 = `/ulw` 改写提示 + 模型调 `ulw_enter`；完成 = 模型调 `ulw_exit`。

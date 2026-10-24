@@ -20,6 +20,7 @@ function ok(cond: boolean, name: string): void {
   } else {
     failed++
     console.error(`  ✗ ${name}`)
+    console.error(`FAILED: ${name}`)
   }
 }
 
@@ -36,7 +37,7 @@ ok(gritPlugin.withHandoffMarker("正文", "兜底").startsWith("[HANDOFF]") && g
 console.log("[sentinel]")
 ok(gritPlugin.matchSentinel("[GRIT:ULW:EXIT]\n") === "[GRIT:ULW:EXIT]", "退出哨兵识别（/ulw_exit）")
 ok(gritPlugin.matchSentinel("前言\n[GRIT:ULW:EXIT]\n") === "[GRIT:ULW:EXIT]", "第二行命中")
-ok(gritPlugin.matchSentinel("[GRIT:ULW:CONTINUE]\n继续") === "[GRIT:ULW:CONTINUE]", "续跑哨兵识别（防回声）")
+ok(gritPlugin.matchSentinel("（grit 自动续跑提示）\n继续") === "（grit 自动续跑提示）", "续跑哨兵识别（防回声）")
 ok(gritPlugin.matchSentinel("[GRIT:ULW:START]\nhi") === null, "START 不再是拦截哨兵（按真实用户消息处理）")
 ok(gritPlugin.matchSentinel("文中提到 [GRIT:ULW:EXIT] 不在首行") === null, "行中引用不命中")
 ok(gritPlugin.matchSentinel("[GRIT:ULW:EXI]\n") === null, "子串变体不命中")
@@ -44,12 +45,12 @@ ok(gritPlugin.matchSentinel("[grit:ulw:v1]\n") === null, "旧命名不再命中"
 
 // ===================== 3. 契约 / 纪律块 =====================
 console.log("[blocks]")
-const ct = gritPlugin.assembleContract("A\n{{handoff_template}}\nB", "HANDOFF模板")
-ok(ct.startsWith("<!-- GRIT:ULW:CONTRACT -->") && ct.endsWith("<!-- /GRIT:ULW:CONTRACT -->"), "契约块首尾哨兵")
-ok(ct.includes("HANDOFF模板") && !ct.includes("{{handoff_template}}"), "handoff 槽位替换")
+const ct = gritPlugin.assembleContract("# 持续工作模式（ULW）· 纪律契约\n\n正文 A")
+ok(ct.startsWith("# 持续工作模式（ULW）· 纪律契约") && ct.includes("正文 A"), "契约原样返回，标题即识别标记")
+ok(!ct.includes("{{handoff_template}}"), "契约不再内嵌交接模板槽位")
 const db = gritPlugin.disciplineBlock("build", "DO X")
 ok(db.startsWith('<GRIT-DISCIPLINE agent="build">') && db.includes("[GRIT:DISCIPLINE:build]") && db.endsWith("</GRIT-DISCIPLINE>"), "纪律块带自解释标签")
-ok(gritPlugin.markerLine("x".repeat(200)).includes("[GRIT:ULW:ACTIVE]") && gritPlugin.markerLine("").length < 500, "marker 行含激活哨兵")
+ok(gritPlugin.markerLine("x".repeat(200)).includes("grit 状态：持续工作模式进行中") && gritPlugin.markerLine("").length < 500, "marker 行含激活哨兵")
 ok(gritPlugin.markerLine("A".repeat(200)).includes("A".repeat(200)), "marker 不截断目标")
 ok(gritPlugin.markerLine("").includes("ulw_exit"), "marker 指引调用 ulw_exit 退出")
 const mArr: any[] = [{ id: "u", role: "user", content: [{ type: "text", text: "hi" }] }]
@@ -59,9 +60,9 @@ const mArr2: any[] = []
 gritPlugin.appendInject(mArr2, "Y")
 ok(mArr2.length === 1 && mArr2[0].role === "user", "appendInject 无 user 消息时新建一条")
 const cont = gritPlugin.continuationBlock("完成 X")
-ok(cont.startsWith("<system-reminder>") && cont.includes("[GRIT:ULW:CONTINUE]") && cont.includes("ulw_exit") && cont.includes("完成 X"), "续跑块：system-reminder 包裹 + 哨兵/退出指引/目标")
-ok(gritPlugin.matchSentinel(cont) === "[GRIT:ULW:CONTINUE]", "包裹后防回声仍生效（哨兵在第 2 行）")
-ok(gritPlugin.markerLine("o").startsWith("<system-reminder>") && gritPlugin.markerLine("o").includes("[GRIT:ULW:ACTIVE]"), "标记块也改用 system-reminder 包裹（借原生背书）")
+ok(cont.startsWith("<system-reminder>") && cont.includes("（grit 自动续跑提示）") && cont.includes("ulw_exit") && cont.includes("完成 X"), "续跑块：system-reminder 包裹 + 哨兵/退出指引/目标")
+ok(gritPlugin.matchSentinel(cont) === "（grit 自动续跑提示）", "包裹后防回声仍生效（哨兵在第 2 行）")
+ok(gritPlugin.markerLine("o").startsWith("<system-reminder>") && gritPlugin.markerLine("o").includes("grit 状态：持续工作模式进行中"), "标记块也改用 system-reminder 包裹（借原生背书）")
 
 // ===================== 4. 消息解析（v2 扁平 {role,content:[...]} + session.context 形态） =====================
 console.log("[messages]")
@@ -198,13 +199,13 @@ const toolMsgsWithContract = [{
   id: "a1", role: "assistant",
   content: [{
     type: "tool", name: "ulw_enter",
-    state: { status: "completed", input: { goal: "g" }, content: [{ type: "text", text: "已进入持续工作模式\n<!-- GRIT:ULW:CONTRACT -->\nbody\n<!-- /GRIT:ULW:CONTRACT -->" }] },
+    state: { status: "completed", input: { goal: "g" }, content: [{ type: "text", text: "已进入持续工作模式\n# 持续工作模式（ULW）· 纪律契约\nbody\n# 持续工作模式（ULW）· 纪律契约" }] },
   }],
 }]
 ok(gritPlugin.contractInHistory(toolMsgsWithContract) === true, "F1 契约探测：看得到工具结果 state.content 里的契约")
 ok(gritPlugin.contractInHistory(ctxMsgs) === false, "F1 契约探测：普通对话不误判")
-ok(gritPlugin.contractInHistory([{ content: [{ type: "text", text: "<!-- GRIT:ULW:CONTRACT -->" }] }]) === true, "F1 契约探测：顶层 text part 亦算")
-ok(gritPlugin.contractInHistory([{ content: [{ type: "tool", state: { output: "<!-- GRIT:ULW:CONTRACT -->" } }] }]) === true, "F1 契约探测：兼容 state.output 形态")
+ok(gritPlugin.contractInHistory([{ content: [{ type: "text", text: "# 持续工作模式（ULW）· 纪律契约" }] }]) === true, "F1 契约探测：顶层 text part 亦算")
+ok(gritPlugin.contractInHistory([{ content: [{ type: "tool", state: { output: "# 持续工作模式（ULW）· 纪律契约" } }] }]) === true, "F1 契约探测：兼容 state.output 形态")
 const r16 = gritPlugin.decideContinuation(mkState({ pauseReason: "user-interruption" }), mkCtr({ fingerprint: "old", lastInjectedAt: NOW - 60000 }), CFG, mkIn({ fingerprint: "new" }), NOW)
 ok(r16.kind === "countdown" && r16.state.pauseReason === null, "F6 插话后模型有新响应 → 解除暂停并继续")
 const r17 = gritPlugin.decideContinuation(mkState({ pauseReason: "user-interruption" }), mkCtr({ fingerprint: "same", lastInjectedAt: NOW - 60000 }), CFG, mkIn({ fingerprint: "same" }), NOW)
@@ -226,16 +227,16 @@ console.log("[ulw enter/exit/compaction]")
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 const REPO = join(import.meta.dirname ?? ".", "..")
 
-const cn = gritPlugin.contractNotice("<!-- GRIT:ULW:CONTRACT -->\n契约正文\n<!-- /GRIT:ULW:CONTRACT -->", "做 X")
+const cn = gritPlugin.contractNotice("# 持续工作模式（ULW）· 纪律契约\n契约正文\n# 持续工作模式（ULW）· 纪律契约", "做 X")
 ok(cn.startsWith("<system-reminder>") && cn.endsWith("</system-reminder>"), "契约提醒块用 system-reminder 包裹")
-ok(cn.includes("目标：做 X") && cn.includes("<!-- GRIT:ULW:CONTRACT -->"), "契约提醒块含目标与首哨兵")
+ok(cn.includes("目标：做 X") && cn.includes("# 持续工作模式（ULW）· 纪律契约"), "契约提醒块含目标与首哨兵")
 ok(gritPlugin.isPluginInjectedText(cn) === true, "契约提醒块被识别为插件注入（不当用户插话）")
 ok(gritPlugin.isPluginInjectedText(gritPlugin.continuationBlock("x")) === true, "续跑块同样被识别为插件注入")
 ok(gritPlugin.isPluginInjectedText("用户普通消息") === false, "普通用户消息不误判")
 ok(gritPlugin.isSafeGitUrl("https://github.com/a/b.git") === true && gritPlugin.isSafeGitUrl("-c core.pager=cat") === false && gritPlugin.isSafeGitUrl("a b") === false, "clone_repo：url 防参数注入")
 ok(gritPlugin.isSafeGitRef("main") === true && gritPlugin.isSafeGitRef("v1.2.3") === true && gritPlugin.isSafeGitRef("-c core.pager=cat") === false && gritPlugin.isSafeGitRef("a b") === false, "clone_repo：ref 防参数注入")
 const en = gritPlugin.exitNoticeBlock()
-ok(en.startsWith("<system-reminder>") && en.includes("[GRIT:ULW:EXITED]") && en.includes("不再生效"), "退出提醒块带哨兵与失效声明")
+ok(en.startsWith("<system-reminder>") && en.includes("grit 状态：持续工作模式已退出") && en.includes("不再生效"), "退出提醒块带哨兵与失效声明")
 
 const tmpHome2 = mkdtempSync(join(tmpdir(), "grit-itest-"))
 mkdirSync(join(tmpHome2, "contracts"), { recursive: true })
@@ -291,9 +292,9 @@ await (gritPlugin.setup as (c: unknown) => Promise<unknown>)(fakeCtx2)
 
 const enterRes = await tools2.get("ulw_enter").execute({ goal: "把 X 做完" }, { sessionID: SID })
 ok(prompts.length === 1 && prompts[0]!.sessionID === SID, "进入：契约用 ctx.session.prompt 发成一条真消息")
-ok(prompts[0]!.text.includes("<!-- GRIT:ULW:CONTRACT -->") && prompts[0]!.text.includes("目标：把 X 做完"), "进入：注入内容 = 契约 + 目标")
+ok(prompts[0]!.text.includes("# 持续工作模式（ULW）· 纪律契约") && prompts[0]!.text.includes("目标：把 X 做完"), "进入：注入内容 = 契约 + 目标")
 ok(typeof enterRes.content === "string" && enterRes.content.length < 300 && enterRes.content.includes("ulw_exit"), "进入：工具只回一句短确认（不再塞契约全文）")
-ok(!String(enterRes.content).includes("<!-- GRIT:ULW:CONTRACT -->"), "进入：工具结果里没有契约正文")
+ok(!String(enterRes.content).includes("# 持续工作模式（ULW）· 纪律契约"), "进入：工具结果里没有契约正文")
 const stPath = join(tmpHome2, "state", `${SID}.json`)
 const stAfterEnter = JSON.parse(readFileSync(stPath, "utf8"))
 ok(stAfterEnter.active === true && stAfterEnter.objective === "把 X 做完" && stAfterEnter.contractFingerprint?.startsWith("sha1:"), "进入：账本已写（active/goal/fingerprint）")
@@ -304,19 +305,29 @@ ok(JSON.parse(readFileSync(stPath, "utf8")).pauseReason === null, "prompt 钩子
 hooks.prompt!({ sessionID: SID, prompt: { text: "这是一条普通用户消息" } })
 ok(JSON.parse(readFileSync(stPath, "utf8")).pauseReason === "user-interruption", "prompt 钩子：普通用户消息仍会触发插话暂停（负例）")
 
+// /ulw 改写：去掉命令标记，换成「整理目标并调用工具」提示
+const evStart: any = { sessionID: SID, prompt: { text: "[GRIT:ULW:START]\n把 X 做完" } }
+hooks.prompt!(evStart)
+ok(!evStart.prompt.text.includes("[GRIT:ULW:START]") && evStart.prompt.text.includes("把 X 做完") && evStart.prompt.text.includes("ulw_enter") && evStart.prompt.text.includes("最近一次"), "prompt 钩子：/ulw 去掉标记，换成含「目标取最近任务 + 进入」的提示")
+ok(evStart.prompt.text.includes("等契约") && evStart.prompt.text.includes("\n<grit-inject>\n"), "prompt 钩子：提示要求先进工具、等契约再开工（标签独占一行）")
+ok(!evStart.prompt.text.includes("ulw_exit"), "prompt 钩子：退出说明不放在进入提示里（归契约）")
+const ulwContractText = readFileSync(join(import.meta.dirname ?? ".", "..", "contracts", "ulw.md"), "utf8")
+ok(ulwContractText.includes("ulw_exit"), "契约里包含退出说明（ulw_exit）")
+ok(ulwContractText.includes("## 现在开始") && ulwContractText.includes("不要停下来等确认"), "契约末尾有「开始工作」提示")
+
 // context 钩子（激活中）：只贴每轮标记，不重贴契约（历史里已有契约时不追加契约块）
-const msgsActive: any[] = [{ role: "user", content: [{ type: "text", text: "继续" }, { type: "text", text: "<!-- GRIT:ULW:CONTRACT -->\n契约\n<!-- /GRIT:ULW:CONTRACT -->" }] }]
+const msgsActive: any[] = [{ role: "user", content: [{ type: "text", text: "继续" }, { type: "text", text: "# 持续工作模式（ULW）· 纪律契约\n契约\n# 持续工作模式（ULW）· 纪律契约" }] }]
 hooks.context!({ agent: "build", sessionID: SID, system: [], messages: msgsActive })
 const addedActive = msgsActive[msgsActive.length - 1].content.slice(2)
-ok(addedActive.length === 1 && addedActive[0].text.includes("[GRIT:ULW:ACTIVE]") && !addedActive[0].text.includes("<!-- GRIT:ULW:CONTRACT -->"), "每轮：只追加标记、不再重贴契约")
+ok(addedActive.length === 1 && addedActive[0].text.includes("grit 状态：持续工作模式进行中") && !addedActive[0].text.includes("# 持续工作模式（ULW）· 纪律契约"), "每轮：只追加标记、不再重贴契约")
 
 // 兜底：历史里确实没有契约时（压缩事件没赶上 / revert 回退）贴回一次，且 60 秒内不重复贴
 const msgsLost: any[] = [{ role: "user", content: [{ type: "text", text: "继续" }] }]
 hooks.context!({ agent: "build", sessionID: SID, system: [], messages: msgsLost })
-ok(gritPlugin.messageText(msgsLost[msgsLost.length - 1]).includes("<!-- GRIT:ULW:CONTRACT -->"), "兜底：契约不在历史里 → 贴回一次")
+ok(gritPlugin.messageText(msgsLost[msgsLost.length - 1]).includes("# 持续工作模式（ULW）· 纪律契约"), "兜底：契约不在历史里 → 贴回一次")
 const msgsLost2: any[] = [{ role: "user", content: [{ type: "text", text: "继续" }] }]
 hooks.context!({ agent: "build", sessionID: SID, system: [], messages: msgsLost2 })
-ok(!gritPlugin.messageText(msgsLost2[msgsLost2.length - 1]).includes("<!-- GRIT:ULW:CONTRACT -->"), "兜底：60 秒内不重复贴（防每轮重贴）")
+ok(!gritPlugin.messageText(msgsLost2[msgsLost2.length - 1]).includes("# 持续工作模式（ULW）· 纪律契约"), "兜底：60 秒内不重复贴（防每轮重贴）")
 
 // 旧账本（早期字段集，没有 exitNoticePending）不该误贴退出提醒
 const SID_OLD = "ses_itest_old"
@@ -324,7 +335,7 @@ const stPathOld = join(tmpHome2, "state", `${SID_OLD}.json`)
 writeFileSync(stPathOld, JSON.stringify({ schemaVersion: 2, sessionID: SID_OLD, directory: "D:/tmp/itest", active: false, objective: "旧账本", epoch: 1, activatedAt: 0, contractFingerprint: null, stopReason: "completed", pauseReason: null, totalInjections: 0 }), "utf8")
 const msgsOld: any[] = [{ role: "user", content: [{ type: "text", text: "收尾" }] }]
 hooks.context!({ agent: "build", sessionID: SID_OLD, system: [], messages: msgsOld })
-ok(!gritPlugin.messageText(msgsOld[msgsOld.length - 1]).includes("[GRIT:ULW:EXITED]"), "旧账本缺 exitNoticePending：不误贴退出提醒")
+ok(!gritPlugin.messageText(msgsOld[msgsOld.length - 1]).includes("grit 状态：持续工作模式已退出"), "旧账本缺 exitNoticePending：不误贴退出提醒")
 
 // 模型退出：工具结果短确认 + 账本留下待贴提醒
 const exitRes = await tools2.get("ulw_exit").execute({ reason: "done" }, { sessionID: SID })
@@ -335,11 +346,11 @@ ok(stAfterExit.active === false && stAfterExit.stopReason === "completed" && stA
 // context 钩子（退出后第一次组装）：贴一次退出提醒，然后清标记
 const msgsExited: any[] = [{ role: "user", content: [{ type: "text", text: "收尾" }] }]
 hooks.context!({ agent: "build", sessionID: SID, system: [], messages: msgsExited })
-ok(gritPlugin.messageText(msgsExited[msgsExited.length - 1]).includes("[GRIT:ULW:EXITED]"), "退出提醒：由账本驱动贴一次")
+ok(gritPlugin.messageText(msgsExited[msgsExited.length - 1]).includes("grit 状态：持续工作模式已退出"), "退出提醒：由账本驱动贴一次")
 ok(JSON.parse(readFileSync(stPath, "utf8")).exitNoticePending === false, "退出提醒：贴完即清标记")
 const msgsAgain: any[] = [{ role: "user", content: [{ type: "text", text: "再收尾" }] }]
 hooks.context!({ agent: "build", sessionID: SID, system: [], messages: msgsAgain })
-ok(!gritPlugin.messageText(msgsAgain[msgsAgain.length - 1]).includes("[GRIT:ULW:EXITED]"), "退出提醒：不会每轮重复贴")
+ok(!gritPlugin.messageText(msgsAgain[msgsAgain.length - 1]).includes("grit 状态：持续工作模式已退出"), "退出提醒：不会每轮重复贴")
 
 // 再进一次 → 契约再注入一次（每次进入一次）
 await tools2.get("ulw_enter").execute({ goal: "第二轮" }, { sessionID: SID })
@@ -349,7 +360,7 @@ ok(prompts.length === 2 && prompts[1]!.text.includes("目标：第二轮"), "再
 releaseCompact()
 await sleep(80)
 ok(prompts.length === 3, "压缩事件：只有 compaction.ended 触发了一次重注入（started 不触发、5 秒内第二次 ended 去重）")
-ok(prompts[2]!.text.includes("<!-- GRIT:ULW:CONTRACT -->") && prompts[2]!.text.includes("目标：第二轮"), "压缩恢复：内容 = 契约 + 当前目标")
+ok(prompts[2]!.text.includes("# 持续工作模式（ULW）· 纪律契约") && prompts[2]!.text.includes("目标：第二轮"), "压缩恢复：内容 = 契约 + 当前目标")
 
 // 用户路径退出：prompt 钩子命中暗号 → 同一条 exitUlw（不必等模型配合）
 hooks.prompt!({ sessionID: SID, prompt: { text: "[GRIT:ULW:EXIT]\n" } })
@@ -359,17 +370,26 @@ ok(stAfterUserExit.active === false && stAfterUserExit.exitNoticePending === tru
 // 先消费这条提醒，再验证「提到暗号」不会触发
 const msgsUserExit: any[] = [{ role: "user", content: [{ type: "text", text: "收尾" }] }]
 hooks.context!({ agent: "build", sessionID: SID, system: [], messages: msgsUserExit })
-ok(gritPlugin.messageText(msgsUserExit[msgsUserExit.length - 1]).includes("[GRIT:ULW:EXITED]"), "用户 /ulw-exit：下一次组装也贴同一段提醒")
+ok(gritPlugin.messageText(msgsUserExit[msgsUserExit.length - 1]).includes("grit 状态：持续工作模式已退出"), "用户 /ulw-exit：下一次组装也贴同一段提醒")
 
 // 普通消息里只是【提到】这个暗号 → 不再触发退出提醒（旧实现按子串扫，会误判）
 const msgsMention: any[] = [{ role: "user", content: [{ type: "text", text: "我之前说过 [GRIT:ULW:EXIT] 这个词" }] }]
 hooks.context!({ agent: "build", sessionID: SID, system: [], messages: msgsMention })
-ok(!gritPlugin.messageText(msgsMention[msgsMention.length - 1]).includes("[GRIT:ULW:EXITED]"), "提到暗号 ≠ 退出事件：不再按子串扫用户消息")
+ok(!gritPlugin.messageText(msgsMention[msgsMention.length - 1]).includes("grit 状态：持续工作模式已退出"), "提到暗号 ≠ 退出事件：不再按子串扫用户消息")
 
-// prompt 注入失败 → 退回工具结果并如实说明
+// 契约消息发送失败 → 不影响进入（只记日志，工具照常返回确认）
 failNextPrompt = true
-const enterFail = await tools2.get("ulw_enter").execute({ goal: "注入失败兜底" }, { sessionID: SID })
-ok(String(enterFail.content).includes("注入失败") && String(enterFail.content).includes("<!-- GRIT:ULW:CONTRACT -->"), "进入：prompt 注入失败时退回工具结果兜底")
+const enterFail = await tools2.get("ulw_enter").execute({ goal: "消息失败兜底" }, { sessionID: SID })
+ok(String(enterFail.content).includes("已进入持续工作模式") && String(enterFail.content).includes("消息失败兜底"), "进入：契约消息发送失败不影响进入（仅记日志）")
+
+// 回归：契约投递必须 fire-and-forget。await 会让工具结果等投递，而投递要等工具返回后的步边界 → 互等（实测卡住 1.5 分钟）
+const pluginSrc = readFileSync(join(REPO, "plugin", "grit.ts"), "utf8")
+const enterSrc = pluginSrc.slice(pluginSrc.indexOf("const enterUlw"), pluginSrc.indexOf("const exitUlw"))
+ok(
+  /void ctx\.session\.prompt\(/.test(enterSrc) && !/await ctx\.session\.prompt\(/.test(enterSrc),
+  "进入：契约投递 fire-and-forget（不 await，避免与步边界互等）",
+)
+ok(!/delivery:\s*["']queue["']/.test(pluginSrc), "进入：契约投递用默认 steer（不指定 queue）")
 
 // ===================== §10 工具通道 & 交接标题 =====================
 

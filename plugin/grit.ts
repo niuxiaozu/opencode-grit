@@ -18,15 +18,15 @@
  * 【v3 关键约束（实验证据，见 docs/DESIGN-v3.md §11）】
  *   - 不设 agent.system：md/配置记录里写 system 会【整段替换】基础提示词并跳过 provider 变体与
  *     工具指导；省略 system 才能保留内置 prompt（如 explore 的 PROMPT_EXPLORE，V-4 实测）。
- *   - 注入分两条通道：**稳定内容**（角色纪律，不随会话变化）→ 系统提示词（同内容同位置 ⇒ 不改前缀缓存）；**会话中触发的动态内容**（激活标记/授权与退出提醒）→ 消息通道的带标签块（只追加尾部）。
+ *   - 注入分两条通道：**稳定内容**（角色纪律，不随会话变化）→ 系统提示词（同内容同位置 ⇒ 不改前缀缓存）；**会话中触发的动态内容**（激活标记/退出提醒）→ 消息通道的带标签块（只追加尾部）。
  *     - 契约是**一条真消息**：进入 ULW（ulw_enter）与压缩完成（session.compaction.ended）都用 ctx.session.prompt
- *     把「契约 + 目标」落库一次；工具只回一句短确认。退出提醒由账本标记驱动（退出后下一轮组装贴一次）。
+ *     把「契约 + 目标」落库一次（默认 steer，在下一个安全步边界投递，不等整轮结束）；工具只回一句短确认。退出提醒由账本标记驱动。
  *   - 注入一律走【消息通道】的独立带标签块（或工具返回）；【绝不改写系统提示词】——用户一输入就改系统提示词会让前缀缓存整段失效。
  *   - v2 无 todo 工具（V-6）：机制 B 不扫描清单，完成由模型自判（调用 ulw_exit 退出）。
- *   - ULW 由工具进入/退出：/ulw 命令文本含授权标识 [GRIT:ULW:START]，模型调 ulw_enter(goal) 时校验「上一条用户消息」含该标识才进入；ulw_exit 退出（目标作参数，不做文本嗅探）。
+ *   - ULW 由工具进入/退出：/ulw 命令首行是标记 [GRIT:ULW:START]，prompt 钩子把它从用户消息里去掉、换成「整理目标并调用 ulw_enter」的提示；ulw_enter 不再做授权校验；ulw_exit 退出（目标作参数，不做文本嗅探）。
  *
  * 四机制（各自独立可关，profile.features.* 热读 + GRIT_DISABLE 总闸）：
- *   A contract-injector   /ulw 携带授权标识 → 模型调用 ulw_enter（校验标识）进入（契约作为一条真消息注入）；每轮一行标记；压缩后重注入契约
+ *   A contract-injector   /ulw → prompt 钩子把标记换成「整理目标并调用 ulw_enter」提示 → 进入（契约作为一条真消息注入）；每轮一行标记；压缩后重注入契约
  *   B continuation        执行空闲时，若仍处于 ULW → 独立块续跑；模型调用 ulw_exit 或用户 /ulw-exit 退出
  *   C profile-engine      profile 工具（list/show/switch，改 agents 记录）
  *   D token-snapshot      被动缓存 token 快照（context_usage 与护栏同源）
@@ -62,15 +62,24 @@ const AGENT_NAMES = ["build", "explore", "general", "sage", "browse"]
 /** 曾被 grit 托管、现已移除的席位（安装/切换时一并从 opencode.json 清除，避免残留）。
  *  `plan` 交回 OpenCode 原生 plan 模式：不写记录，原生身份/权限/描述才不会被我们覆盖。 */
 const REMOVED_AGENT_NAMES = ["factory", "plan", "expert"]
-/** /ulw 命令携带的授权标识：ulw_enter 校验「上一条用户消息」是否含它，无则拒绝进入。 */
+/** /ulw 命令携带的标记：prompt 钩子识别后把它从用户消息里去掉，换成下面这段提示。 */
 const ULW_AUTH_TOKEN = "[GRIT:ULW:START]"
+/** /ulw 改写后的提示（替代原来由 context 钩子注入的"授权提醒"）。 */
+const START_HINT = [
+  "<grit-inject>",
+  "准备进入持续工作模式（ULW）。",
+  "",
+  "目标：取用户最近一次提出的任务——在最近几轮里找，未必是最后一条消息；不要取更早的、范围更大的全局目标；两者不一致时以最近为准。",
+  "然后调用 ulw_enter 工具，把目标作为 goal 传入。",
+  "调用完先停下：本轮只回一句「等契约」，不要开始干活；契约消息到达后再动手（契约末尾会提示你开始）。",
+  "</grit-inject>",
+].join("\n")
 const SENTINEL_EXIT = "[GRIT:ULW:EXIT]"
-const SENTINEL_CONTINUE = "[GRIT:ULW:CONTINUE]"
-const CONTRACT_OPEN = "<!-- GRIT:ULW:CONTRACT -->"
-const CONTRACT_CLOSE = "<!-- /GRIT:ULW:CONTRACT -->"
-const MARKER_TAG = "[GRIT:ULW:ACTIVE]"
-const ARMED_TAG = "[GRIT:ULW:ARMED]"
-const EXITED_TAG = "[GRIT:ULW:EXITED]"
+const SENTINEL_CONTINUE = "（grit 自动续跑提示）"
+/** 契约块的识别标记：就是契约正文的第一行标题（自然文本，不用注释/包装标签）。 */
+const CONTRACT_OPEN = "# 持续工作模式（ULW）· 纪律契约"
+const MARKER_TAG = "grit 状态：持续工作模式进行中"
+const EXITED_TAG = "grit 状态：持续工作模式已退出"
 /** 插件拦截的整行哨兵（/ulw 命令本身按真实用户消息处理，不做拦截）。 */
 const PROMPT_SENTINELS = [SENTINEL_EXIT, SENTINEL_CONTINUE]
 
@@ -341,10 +350,9 @@ function matchSentinel(text: string): string | null {
   return null
 }
 
-/** 契约拼装：ulw.md（含交接模板槽位）包 us 首尾哨兵。纯字符串。校准段改为运行时按模型追加，不入契约。 */
-function assembleContract(ulwText: string, handoffText: string): string {
-  const body = ulwText.replace("{{handoff_template}}", handoffText)
-  return `${CONTRACT_OPEN}\n${body.trim()}\n${CONTRACT_CLOSE}`
+/** 契约拼装：契约文件原样使用（第一行标题即识别标记），不再套注释/包装标签。 */
+function assembleContract(ulwText: string): string {
+  return ulwText.trim()
 }
 
 /** 纪律段块（独立带标签，防重复）：席位专属（+ 档里指定的变体）。 */
@@ -354,7 +362,7 @@ function disciplineBlock(name: string, content: string): string {
 
 function markerLine(objective: string): string {
   const obj = objective.trim()
-  return `<system-reminder>${MARKER_TAG} 持续工作模式进行中（目标：${obj || "（未设定）"}）。纪律契约持续有效；完成后调用 ulw_exit 工具退出。</system-reminder>`
+  return `<system-reminder>${MARKER_TAG}（目标：${obj || "（未设定）"}）。纪律契约仍然有效；完成后调用 ulw_exit 退出。</system-reminder>`
 }
 
 function continuationBlock(objective: string): string {
@@ -394,7 +402,7 @@ function contractNotice(contract: string, objective: string): string {
 
 /** 「已退出」提醒：两条退出路径共用同一段文本，由账本标记驱动、贴一次即清。 */
 function exitNoticeBlock(): string {
-  return `<system-reminder>${EXITED_TAG} ULW 已退出：纪律契约（场景契约/验收证据/审查门/QA 矩阵/零容忍/完成判定）自此不再生效。请用一两句话总结当前进度与剩余工作后结束回合，不要继续推进。</system-reminder>`
+  return `<system-reminder>${EXITED_TAG}：纪律契约自此不再生效。用一两句话总结当前进度与剩余工作，然后结束回合，不要继续推进。</system-reminder>`
 }
 
 /** 取一条消息的纯文本（内容兼容 v2 扁平 {role,content:[{type,text}]} 与 session.context 的形态）。 */
@@ -700,7 +708,7 @@ const TOOL_DEFS: ToolDefLite[] = [
     input: {
       type: "object",
       properties: {
-        summary: { type: "string", description: "你按模板撰写的完整交接摘要（Markdown：当前状态/已确认的事实/待处理的工作/已知的坑/会话级状态）。省略时用内置瘦摘要。" },
+        summary: { type: "string", description: "按模板撰写的完整交接摘要，七个小节：任务与目标 / 当前状态 / 已确认的事实 / 待处理的工作 / 已知的坑 / 验证情况 / 会话级状态。只写信息不写指令。省略时用内置瘦摘要。" },
       },
       additionalProperties: false,
     },
@@ -722,7 +730,7 @@ const TOOL_DEFS: ToolDefLite[] = [
   {
     name: "ulw_enter",
     description:
-      "Enter Continuous-Work (ULW) mode. Call this ONLY when the user asked for continuous work (they ran /ulw) — otherwise it is rejected. Pass `goal`: one line stating the task the user MOST RECENTLY asked for — locate it within the last few turns (it need NOT be the final message; chatter or follow-ups may come after it); NOT an older, broader goal. The discipline contract is injected into the session as a separate reminder message; this tool returns only a short confirmation. The mode lasts until you call ulw_exit.",
+      "Enter Continuous-Work (ULW) mode. Call this when the user asked for continuous work (they ran /ulw — the harness then appends an instruction asking you to enter). Pass `goal`: one line stating the task the user MOST RECENTLY asked for — locate it within the last few turns (it need NOT be the final message; chatter or follow-ups may come after it); NOT an older, broader goal. The discipline contract is injected into the session as a separate reminder message; this tool returns only a short confirmation. The mode lasts until you call ulw_exit.",
     input: {
       type: "object",
       properties: { goal: { type: "string", description: "一句话目标（从会话上下文提炼）" } },
@@ -990,8 +998,7 @@ const gritDefinition = Plugin.define({
     const buildContract = (): { text: string; fingerprint: string } | { error: string } => {
       const ulw = readText(join(contractsDir, "ulw.md"))
       if (ulw === null) return { error: "contracts/ulw.md 缺失" }
-      const ht = readText(join(contractsDir, "handoff-template.md")) ?? ""
-      const text = assembleContract(ulw, ht)
+      const text = assembleContract(ulw)
       return { text, fingerprint: `sha1:${createHash("sha1").update(text).digest("hex").slice(0, 12)}` }
     }
 
@@ -1067,7 +1074,24 @@ const gritDefinition = Plugin.define({
         counters.set(sid, r.counters)
         const stateChanged = JSON.stringify(r.state) !== JSON.stringify(state)
         if (stateChanged) saveState(r.state)
-        if (r.kind === "skip") { log("b", `SKIP s=${sid.slice(0, 8)} reason=${r.reason ?? ""}`); return }
+        if (r.kind === "skip") {
+          log("b", `SKIP s=${sid.slice(0, 8)} reason=${r.reason ?? ""}`)
+          // 冷却跳过不能就此作罢：之后可能再也没有"执行结束"事件来重试。
+          // 按剩余冷却时间安排一次自检（有上限，避免空转）。
+          if (r.reason === "cooldown") {
+            const wait = Math.min(
+              60_000,
+              Math.max(500, cfg.cooldownBaseMs * Math.pow(2, Math.min(r.counters.consecutiveFailures, cfg.backoffPowCap)) - (Date.now() - r.counters.lastInjectedAt) + 100),
+            )
+            const timer = setTimeout(() => {
+              countdownTimers.delete(sid)
+              void handleIdle(sid)
+            }, wait)
+            countdownTimers.set(sid, timer)
+            log("b", `COOLDOWN-RETRY s=${sid.slice(0, 8)} ms=${wait}`)
+          }
+          return
+        }
         if (r.kind === "stop") { log("b", `STOP s=${sid.slice(0, 8)} reason=${r.reason ?? ""}`); return }
         if (r.kind === "pause") { log("b", `PAUSE s=${sid.slice(0, 8)} reason=${r.reason ?? ""}`); return }
         cancelCountdown(sid)
@@ -1083,30 +1107,10 @@ const gritDefinition = Plugin.define({
       }
     }
 
-    // ---- 取"上一条用户消息"文本（ulw_enter 的授权校验依据） ----
-    const lastUserText = async (sid: string): Promise<string> => {
-      try {
-        const res = await ctx.session.context({ sessionID: sid })
-        const msgs: unknown[] = Array.isArray(res) ? res : ((res as any)?.data ?? [])
-        return lastUserTextOf(msgs)
-      } catch (e) {
-        log("b", `lastUserText 读取失败 s=${sid.slice(0, 8)} err=${e instanceof Error ? e.message : String(e)}`)
-        return ""
-      }
-    }
-
-    /** 模型调用 ulw_enter：仅当「上一条用户消息」含授权标识 ULW_AUTH_TOKEN（即用户执行过 /ulw），
-     *  或本会话已在 ULW 中（允许更新目标）时生效；无授权标识则拒绝并告知模型。 */
+    /** 模型调用 ulw_enter：直接进入（是否该调用由 /ulw 改写后的提示负责，这里不再做授权校验）。 */
     const enterUlw = async (sid: string, dir: string, goal: string): Promise<string> => {
       if (!featEnabled("contractInjector")) return "ULW 机制已关闭（profile.features.contractInjector=false 或 GRIT_DISABLE=1）。"
       const existing = loadState(sid)
-      if (!existing?.active) {
-        const lu = await lastUserText(sid)
-        if (!lu.includes(ULW_AUTH_TOKEN)) {
-          log("a", `ENTER-REJECT s=${sid.slice(0, 8)}（上一条用户消息无授权标识）`)
-          return `未进入 ULW：上一条用户消息不含授权标识。仅当用户执行过 /ulw（其命令文本含 ${ULW_AUTH_TOKEN}）时才应调用本工具；否则不要进入持续工作模式。`
-        }
-      }
       const state: UlwState = {
         ...(existing ?? newState(sid, dir)),
         active: true, objective: goal.trim().slice(0, 200),
@@ -1124,27 +1128,20 @@ const gritDefinition = Plugin.define({
       counters.set(sid, {
         ...getCtr(sid),
         consecutiveFailures: 0, stagnationCount: 0, awaitingProgress: false,
-        // 契约注入本身就是一次"启动"：记下时间，避免紧接着又被续跑门推一把（冷却 5s）
+        // 契约消息要等工具返回后的步边界才投递；刚进入就空闲时先让出一次，别在契约到达前抢跑。
+        // 若契约没到（发送失败等），COOLDOWN-RETRY 会在冷却结束后补一次。
         lastInjectedAt: Date.now(),
       })
       log("a", `ENTER s=${sid.slice(0, 8)} epoch=${state.epoch} fp=${bc.fingerprint} goal=${state.objective.slice(0, 30)}`)
       // 契约走「真消息」：ctx.session.prompt 会把这条文本落库（UI 上就是一条用户消息），
       // 下一轮及以后的请求一定能看到；工具结果只在当轮可见，压缩后就会丢。
-      try {
-        await ctx.session.prompt({ sessionID: sid, text: contractNotice(bc.text, state.objective) })
-        log("a", `ENTER-INJECT s=${sid.slice(0, 8)} chars=${bc.text.length}`)
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e)
-        log("a", `ENTER-INJECT-FAIL s=${sid.slice(0, 8)} err=${msg}`)
-        // 注入失败是异常路径：把契约退回工具结果，至少本模式仍能生效（并如实说明）
-        return [
-          `已进入 ULW（目标：${state.objective || "（未指定）"}），但契约作为消息注入失败：${msg}`,
-          "以下契约全文改由本条工具结果提供：",
-          "",
-          bc.text,
-        ].join("\n")
-      }
-      return `已进入持续工作模式（ULW）。目标：${state.objective || "（未指定）"}。契约已作为一条提醒消息注入本会话，按它执行；完成时调用 ulw_exit 退出。`
+      // delivery 用默认的 steer：在当前这一轮的下一个安全步边界投递，不等整轮结束。
+      // 必须【不 await】：await 会让工具结果等投递完成，而投递要等工具返回之后的步边界——互等。
+      // （2026-10-24T02:25 实测：await + steer 时工具调用后约 1.5 分钟无进展，用户按 Esc 才恢复。）
+      void ctx.session.prompt({ sessionID: sid, text: contractNotice(bc.text, state.objective) })
+        .then(() => log("a", `ENTER-INJECT s=${sid.slice(0, 8)} chars=${bc.text.length}`))
+        .catch((e: unknown) => log("a", `ENTER-INJECT-FAIL s=${sid.slice(0, 8)} err=${e instanceof Error ? e.message : String(e)}`))
+      return `已进入持续工作模式（ULW）。目标：${state.objective || "（未指定）"}。契约将作为一条消息注入本会话，按它执行；完成时调用 ulw_exit 退出。`
     }
 
     /** 退出 ULW（模型调用 ulw_exit 或用户 /ulw-exit）。两条路径共用这一个函数：
@@ -1248,6 +1245,14 @@ const gritDefinition = Plugin.define({
         currentSession = sid
         const text = typeof event.prompt?.text === "string" ? (event.prompt.text as string) : ""
         if (text === "") return
+        // /ulw：把命令标记从用户消息里去掉，换成"整理目标并调用工具"的提示（标记不进历史）。
+        const lines = text.split(/\r?\n/)
+        if (lines.slice(0, 2).some((l) => l.trim() === ULW_AUTH_TOKEN)) {
+          const rest = lines.filter((l) => l.trim() !== ULW_AUTH_TOKEN).join("\n").trim()
+          event.prompt.text = rest ? `${rest}\n\n${START_HINT}` : START_HINT
+          log("a", `ULW-HINT s=${sid.slice(0, 8)}`)
+          return
+        }
         const sentinel = matchSentinel(text)
         if (sentinel === SENTINEL_EXIT) {
           exitUlw(sid, "user")
@@ -1273,7 +1278,7 @@ const gritDefinition = Plugin.define({
     // ---- context 钩子 ----
     // 注入分两条通道：
     //   · 稳定内容（角色纪律，不随会话变化）→ 系统提示词（同内容同位置 ⇒ 不影响前缀缓存）
-    //   · 会话中触发的动态内容（激活标记 / 授权与退出提醒 / 压缩后契约恢复）→ 消息通道的带标签块（只追加尾部）
+    //   · 会话中触发的动态内容（激活标记 / 退出提醒 / 压缩后契约恢复）→ 消息通道的带标签块（只追加尾部）
     const sysHas = (sys: any[], needle: string): boolean =>
       Array.isArray(sys) && sys.some((p) => typeof p?.text === "string" && p.text.includes(needle))
 
@@ -1305,7 +1310,6 @@ const gritDefinition = Plugin.define({
           SHARED.lastModels.set(sid, { providerID: mref.providerID, modelID: mref.id })
         }
         const st = loadState(sid)
-        const lu = lastUserTextOf(msgs)
         if (st && st.active && st.stopReason === null) {
           // 契约已在进入 / 压缩恢复时作为一条真消息注入（落库、历史里查得到），这里只贴每轮一行标记。
           if (!messagesContain(msgs, MARKER_TAG)) appendInject(msgs, markerLine(st.objective))
@@ -1330,9 +1334,6 @@ const gritDefinition = Plugin.define({
             if (!messagesContain(msgs, EXITED_TAG)) appendInject(msgs, exitNoticeBlock())
             saveState({ ...st, exitNoticePending: false })
             log("a", `EXITED-NOTICE s=${sid.slice(0, 8)}`)
-          }
-          if (lu.includes(ULW_AUTH_TOKEN) && !messagesContain(msgs, ARMED_TAG)) {
-            appendInject(msgs, `<system-reminder>${ARMED_TAG} 用户已请求持续工作模式：请立即调用 ulw_enter 工具进入，传入「用户最近一次提出的任务」作为目标（在最近几轮里定位，未必是最后一条消息；不要取更早的、更大范围的全局目标）。工具会把纪律契约作为一条提醒消息注入本会话，按其执行；完成时调用 ulw_exit 退出。</system-reminder>`)
           }
         }
       } catch (e) {
@@ -1637,6 +1638,7 @@ const gritDefinition = Plugin.define({
               if (!sid) continue
               const st = loadState(sid)
               if (!st || !st.active || st.stopReason !== null) continue
+              log("b", `EDGE s=${sid.slice(0, 8)}`)
               void handleIdle(sid)
               continue
             }
