@@ -313,7 +313,7 @@ ok(evStart.prompt.text.includes("等契约") && evStart.prompt.text.includes("\n
 ok(!evStart.prompt.text.includes("ulw_exit"), "prompt 钩子：退出说明不放在进入提示里（归契约）")
 const ulwContractText = readFileSync(join(import.meta.dirname ?? ".", "..", "contracts", "ulw.md"), "utf8")
 ok(ulwContractText.includes("ulw_exit"), "契约里包含退出说明（ulw_exit）")
-ok(ulwContractText.includes("## 现在开始") && ulwContractText.includes("不要停下来等确认"), "契约末尾有「开始工作」提示")
+ok(ulwContractText.includes("## 现在开始") && ulwContractText.includes("现在请开始工作"), "契约末尾有「开始工作」提示")
 
 // context 钩子（激活中）：只贴每轮标记，不重贴契约（历史里已有契约时不追加契约块）
 const msgsActive: any[] = [{ role: "user", content: [{ type: "text", text: "继续" }, { type: "text", text: "# 持续工作模式（ULW）· 纪律契约\n契约\n# 持续工作模式（ULW）· 纪律契约" }] }]
